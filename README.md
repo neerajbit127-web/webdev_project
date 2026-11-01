@@ -3,7 +3,7 @@
 [![Node.js](https://img.shields.io/badge/Node.js-v18+-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![Express.js](https://img.shields.io/badge/Express.js-v4-000000?logo=express&logoColor=white)](https://expressjs.com/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-v14+-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
-[![Vanilla JS](https://img.shields.io/badge/Frontend-Vanilla%20JS%20%2F%20CSS3-F7DF1E?logo=javascript&logoColor=black)](https://developer.mozilla.org/)
+[![HTML5 & CSS3](https://img.shields.io/badge/Frontend-HTML5%20%2F%20CSS3%20(Pure)-E34F26?logo=html5&logoColor=white)](https://developer.mozilla.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 > **Buy, rent, and sell second-hand books right in your neighborhood.**  
@@ -36,7 +36,7 @@
 Physical books often sit idle on bookshelves after a single read. **PageShelf** transforms passive bookshelves into local community libraries and micro-marketplaces:
 - **Affordable Access**: Rent textbooks and bestsellers for short durations without paying full retail price.
 - **Monetize Your Shelf**: Earn by selling or renting out pre-loved copies.
-- **Zero Framework Overhead**: Built with clean, accessible Vanilla JavaScript, Semantic HTML5, and responsive Modern CSS on top of a battle-tested Node.js + Express + PostgreSQL stack.
+- **Pure HTML & CSS**: Built purely with Semantic HTML5 and responsive Modern CSS (zero JavaScript on the client) on top of a battle-tested Node.js + Express + PostgreSQL stack.
 
 ---
 
@@ -44,7 +44,7 @@ Physical books often sit idle on bookshelves after a single read. **PageShelf** 
 
 ### 🔐 Authentication & Profiles
 - Secure user signup and login with **bcryptjs** password hashing.
-- Stateless authentication using **JSON Web Tokens (JWT)**.
+- Secure session handling with **HTTP-only Cookie-based JWT** (seamless native HTML `<form>` submissions without client-side JS).
 - User profile management with customizable delivery address and contact details.
 
 ### 🔍 Discovery & Advanced Filtering
@@ -79,11 +79,11 @@ Physical books often sit idle on bookshelves after a single read. **PageShelf** 
 
 | Layer | Technology | Description |
 | :--- | :--- | :--- |
-| **Frontend** | HTML5, CSS3, Vanilla JS | Ultra-fast, zero-dependency client with native DOM APIs |
+| **Frontend** | Pure HTML5, CSS3 | Zero client-side JavaScript, native HTML5 forms, modern responsive CSS layout & UI states |
 | **Backend** | Node.js, Express.js | RESTful modular API server |
 | **Database** | PostgreSQL | Relational database with strict constraints and foreign keys |
 | **Database Driver** | `pg` (node-postgres) | Connection pooling and query optimization |
-| **Authentication** | JWT (`jsonwebtoken`) & `bcryptjs` | Token-based auth and secure password hashing |
+| **Authentication** | HTTP-only Cookie JWT & `bcryptjs` | Cookie-based JWT auth for native HTML `<form>` submissions without client JS |
 | **Environment** | `dotenv` | Centralized environment configuration |
 
 ---
@@ -150,15 +150,16 @@ pageshelf/
 │   ├── schema.sql          # Tables, constraints, enums, triggers, and indexes
 │   └── seed.sql            # Initial categories, sample books, and demo users
 │
-└── public/                 # Static frontend assets
-    ├── index.html          # Main single-page application entry / landing page
-    ├── css/
-    │   ├── style.css       # Design tokens, variables, typography, and base styles
-    │   └── components.css  # Cards, modals, buttons, forms, and layout grid
-    └── js/
-        ├── api.js          # Reusable Fetch API client wrapper
-        ├── auth.js         # Client-side token storage & session handling
-        └── app.js          # DOM rendering, event listeners, and route views
+└── public/                 # Static frontend assets (Pure HTML & CSS)
+    ├── index.html          # Marketplace landing & book catalog
+    ├── login.html          # User login page
+    ├── register.html       # User registration page
+    ├── book.html           # Book details & rental / purchase forms
+    ├── new-listing.html    # Add copy listing form
+    ├── dashboard.html      # User rentals, purchases, and active listings
+    └── css/
+        ├── style.css       # Design tokens, variables, typography, and base styles
+        └── components.css  # Cards, pure CSS modals/tabs, buttons, forms, and layout grid
 ```
 
 ---
