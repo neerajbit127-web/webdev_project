@@ -1,0 +1,28 @@
+1. What is the primary role of a Load Balancer in distributed systems?
+A) Distributing incoming network traffic across multiple servers
+B) Compressing images for database storage
+C) Encrypting disk sectors on single machine
+D) Managing CPU clock frequencies
+Answer: A
+
+2. In relational databases, what does the ACID acronym stand for?
+A) Action, Command, Index, Delay
+B) Atomicity, Consistency, Isolation, Durability
+C) Allocation, Concurrency, Iteration, Deletion
+D) Asynchronous, Callback, Interface, Dispatch
+Answer: B
+
+3. Which HTTP status code indicates a successful resource creation?
+A) 200 OK
+B) 201 Created
+C) 204 No Content
+D) 301 Moved Permanently
+Answer: B
+
+4. What is the time complexity of binary search on a sorted array of size N?
+A) O(1)
+B) O(N)
+C) O(log N)
+D) O(N^2)
+Answer: C
+

@@ -557,7 +557,3 @@ Distributed under the **MIT License**. See `LICENSE` for details.
 Copyright (c) 2026 ExamPortal Contributors
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software...
 ```
-
-Copyright (c) 2026 ExamPortal Contributors
-Permission is hereby granted, free of charge, to any person obtaining a copy of this software...
-```

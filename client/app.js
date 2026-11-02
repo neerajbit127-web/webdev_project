@@ -6,9 +6,10 @@
 document.addEventListener('DOMContentLoaded', () => {
 
   /* --------------------------------------------------------------------------
-     1. Mock Database & Application State
+     1. Application State & Storage
      -------------------------------------------------------------------------- */
   const state = {
+    token: localStorage.getItem('examportal_token') || null,
     currentRole: 'TEACHER', // 'TEACHER' | 'STUDENT'
     currentUser: null,
     activeExam: null,
@@ -17,101 +18,7 @@ document.addEventListener('DOMContentLoaded', () => {
     timerInterval: null,
     remainingSeconds: 0,
     strikeCount: 0,
-    exams: [
-      {
-        code: 'EXAM-4020',
-        title: 'CS402: Advanced Distributed Systems',
-        duration: 45,
-        batch: 'Fall 2026 CS Senior',
-        submissions: 18,
-        questions: [
-          {
-            prompt: 'In the Raft consensus algorithm, which condition must be met before a Leader node is permitted to safely commit a log entry originated from its current term to the state machine?',
-            options: [
-              'The entry has been replicated on at least one candidate node and verified by a two-phase commit coordinator.',
-              'The entry has been successfully replicated on a strict majority (quorum) of the cluster servers.',
-              'Every follower has responded with an explicit acknowledgement and applied the command locally.',
-              'The entry matches the hash sequence of an entry previously committed in an earlier epoch.'
-            ],
-            correctIndex: 1
-          },
-          {
-            prompt: 'Which guarantee is provided by Byzantine Fault Tolerance (BFT) algorithms in a network of N nodes?',
-            options: [
-              'Tolerates up to (N-1)/3 malicious or failing nodes while maintaining consensus.',
-              'Requires absolute synchronous physical clocks across all member nodes.',
-              'Guarantees zero latency on cross-datacenter state machine replication.',
-              'Eliminates the possibility of network partitioning.'
-            ],
-            correctIndex: 0
-          },
-          {
-            prompt: 'In distributed transaction processing, what is the primary operational weakness of the standard Two-Phase Commit (2PC) protocol?',
-            options: [
-              'It requires exponential message complexity O(2^N).',
-              'It is a blocking protocol; if the Coordinator crashes during the prepare phase, Cohorts may remain indefinitely blocked.',
-              'It cannot support ACID properties across relational databases.',
-              'It does not allow multiple read queries simultaneously.'
-            ],
-            correctIndex: 1
-          },
-          {
-            prompt: 'What core property does the CAP Theorem state a distributed data store can NEVER simultaneously provide in the event of a network partition (P)?',
-            options: [
-              'Performance and Security.',
-              'Consistency and Availability.',
-              'Latency and Fault Recovery.',
-              'Durability and Atomicity.'
-            ],
-            correctIndex: 1
-          },
-          {
-            prompt: 'How does vector clock synchronization differ from standard Lamport timestamps in distributed systems?',
-            options: [
-              'Vector clocks can establish causal concurrency and determine if two events are causally independent.',
-              'Vector clocks rely strictly on hardware GPS atomic clocks.',
-              'Vector clocks reduce storage size to a single 64-bit integer.',
-              'Lamport timestamps are only applicable to single-node relational databases.'
-            ],
-            correctIndex: 0
-          }
-        ]
-      },
-      {
-        code: 'EXAM-2010',
-        title: 'CS201: Data Structures & Algorithms Quiz 3',
-        duration: 30,
-        batch: 'Fall 2026 Sophomore',
-        submissions: 42,
-        questions: [
-          {
-            prompt: 'What is the worst-case time complexity of searching for an element in an unaugmented Red-Black Binary Search Tree with N keys?',
-            options: ['O(1)', 'O(log N)', 'O(N)', 'O(N log N)'],
-            correctIndex: 1
-          },
-          {
-            prompt: 'Which data structure is primarily utilized in Dijkstra\'s single-source shortest path algorithm to extract minimum weights efficiently?',
-            options: ['LIFO Stack', 'Min-Priority Queue / Binary Heap', 'Disjoint Set Union (DSU)', 'Circular Doubly Linked List'],
-            correctIndex: 1
-          },
-          {
-            prompt: 'In dynamic programming, what two fundamental properties must a problem exhibit to be suitably solved via optimal substructure?',
-            options: [
-              'Overlapping subproblems and optimal substructure.',
-              'Linear time recurrence and greedy choices.',
-              'Amortized complexity and tree depth.',
-              'Non-deterministic polynomial time bounds.'
-            ],
-            correctIndex: 0
-          },
-          {
-            prompt: 'Which algorithm is typically utilized to find strongly connected components (SCC) in a directed graph in linear time O(V + E)?',
-            options: ['Bellman-Ford', 'Tarjan\'s or Kosaraju\'s Algorithm', 'Kruskal\'s Algorithm', 'Floyd-Warshall'],
-            correctIndex: 1
-          }
-        ]
-      }
-    ]
+    exams: []              // Loaded dynamically from server (no mock exams)
   };
 
   /* --------------------------------------------------------------------------
@@ -180,26 +87,45 @@ document.addEventListener('DOMContentLoaded', () => {
   roleBtnTeacher.addEventListener('click', () => setRole('TEACHER'));
   roleBtnStudent.addEventListener('click', () => setRole('STUDENT'));
 
-  authLoginForm.addEventListener('submit', (e) => {
+  authLoginForm.addEventListener('submit', async (e) => {
     e.preventDefault();
-    if (state.currentRole === 'TEACHER') {
-      state.currentUser = {
-        role: 'TEACHER',
-        name: 'Dr. Alan Vance',
-        identifier: loginIdentifier.value
-      };
-      document.getElementById('teacherDisplayName').textContent = state.currentUser.name;
-      renderCreatedExamsTable();
-      showScreen('screen-teacher');
-    } else {
-      state.currentUser = {
-        role: 'STUDENT',
-        name: 'Elena Rostova',
-        identifier: loginIdentifier.value || 'ST-94821'
-      };
-      document.getElementById('studentDisplayName').textContent = state.currentUser.name;
-      document.getElementById('studentDisplayId').textContent = `Student ID: ${state.currentUser.identifier}`;
-      showScreen('screen-student-dash');
+    const identifier = loginIdentifier.value.trim();
+    const password = document.getElementById('loginPassword').value;
+
+    btnAuthSubmit.disabled = true;
+    btnAuthSubmit.textContent = 'Signing in...';
+
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ identifier, password, role: state.currentRole })
+      });
+      const result = await res.json();
+
+      if (!res.ok || !result.success) {
+        alert(result.error?.message || 'Authentication failed. Please verify your credentials.');
+        return;
+      }
+
+      state.token = result.data.token;
+      state.currentUser = result.data.user;
+      localStorage.setItem('examportal_token', state.token);
+
+      if (state.currentRole === 'TEACHER') {
+        document.getElementById('teacherDisplayName').textContent = state.currentUser.fullName || state.currentUser.name || 'Dr. Alan Vance';
+        await fetchTeacherExams();
+        showScreen('screen-teacher');
+      } else {
+        document.getElementById('studentDisplayName').textContent = state.currentUser.fullName || state.currentUser.name || 'Elena Rostova';
+        document.getElementById('studentDisplayId').textContent = `Student ID: ${state.currentUser.studentId || state.currentUser.identifier || 'ST-94821'}`;
+        showScreen('screen-student-dash');
+      }
+    } catch (err) {
+      alert('Connection error communicating with assessment backend.');
+    } finally {
+      btnAuthSubmit.disabled = false;
+      btnAuthSubmit.textContent = state.currentRole === 'TEACHER' ? 'Sign In as Teacher' : 'Sign In as Student';
     }
   });
 
@@ -220,6 +146,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const examFileInput = document.getElementById('examFileInput');
   const filePreview = document.getElementById('filePreview');
   const fileNameDisplay = document.getElementById('fileNameDisplay');
+  let selectedFile = null;
 
   if (fileDropzone && examFileInput) {
     fileDropzone.addEventListener('click', () => examFileInput.click());
@@ -237,35 +164,139 @@ document.addEventListener('DOMContentLoaded', () => {
       e.preventDefault();
       fileDropzone.classList.remove('dragover');
       if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-        fileNameDisplay.textContent = e.dataTransfer.files[0].name;
+        selectedFile = e.dataTransfer.files[0];
+        fileNameDisplay.textContent = selectedFile.name;
         filePreview.classList.add('active');
       }
     });
 
     examFileInput.addEventListener('change', () => {
       if (examFileInput.files && examFileInput.files.length > 0) {
-        fileNameDisplay.textContent = examFileInput.files[0].name;
+        selectedFile = examFileInput.files[0];
+        fileNameDisplay.textContent = selectedFile.name;
         filePreview.classList.add('active');
       }
     });
   }
 
+  /**
+   * Parses questions from plain text, Markdown, or JSON.
+   */
+  function parseQuestionsFromText(text) {
+    // 1. Try parsing JSON format
+    try {
+      const parsed = JSON.parse(text);
+      if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].prompt && parsed[0].options) {
+        return parsed;
+      }
+      if (parsed.questions && Array.isArray(parsed.questions) && parsed.questions.length > 0) {
+        return parsed.questions;
+      }
+    } catch (_) {}
+
+    // 2. Parse structured questions (e.g. "1. Question", "A) Option", "Answer: B")
+    const questions = [];
+    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    let currentQ = null;
+    const letterMap = { 'A': 0, 'B': 1, 'C': 2, 'D': 3 };
+
+    for (const line of lines) {
+      const qMatch = line.match(/^(?:(?:Q|Question)\s*\d+[:.]?|\d+[.)])\s*(.+)/i);
+      const optMatch = line.match(/^([A-D])[).:]\s*(.+)/i);
+      const ansMatch = line.match(/^(?:Answer|Ans|Correct|Correct Answer)[:\s]+([A-D]|\d+)/i);
+
+      if (qMatch) {
+        if (currentQ && currentQ.options.length >= 2) {
+          questions.push(currentQ);
+        }
+        currentQ = {
+          prompt: qMatch[1].trim(),
+          options: [],
+          correctIndex: 0
+        };
+      } else if (optMatch && currentQ) {
+        currentQ.options.push(optMatch[2].trim());
+      } else if (ansMatch && currentQ) {
+        const val = ansMatch[1].toUpperCase();
+        if (letterMap[val] !== undefined) {
+          currentQ.correctIndex = letterMap[val];
+        } else if (!isNaN(parseInt(val, 10))) {
+          currentQ.correctIndex = Math.max(0, parseInt(val, 10) - 1);
+        }
+      } else if (currentQ && currentQ.options.length === 0) {
+        currentQ.prompt += ' ' + line;
+      }
+    }
+
+    if (currentQ && currentQ.options.length >= 2) {
+      questions.push(currentQ);
+    }
+
+    return questions;
+  }
+
+  /**
+   * Fetches teacher's created examinations from server API.
+   */
+  async function fetchTeacherExams() {
+    if (!state.token) return;
+
+    try {
+      const res = await fetch('/api/exams/mine', {
+        headers: {
+          'Authorization': `Bearer ${state.token}`
+        }
+      });
+      const result = await res.json();
+
+      if (res.ok && result.success) {
+        state.exams = result.data;
+        renderCreatedExamsTable();
+      } else if (result.statusCode === 503) {
+        createdExamsCount.textContent = 'Database offline (PostgreSQL required)';
+        createdExamsTableBody.innerHTML = `
+          <tr>
+            <td colspan="5" style="text-align: center; color: var(--danger); padding: 24px;">
+              <strong>Database Connection Offline:</strong> PostgreSQL is not running. Please start PostgreSQL to persist and list examinations.
+            </td>
+          </tr>
+        `;
+      }
+    } catch (err) {
+      console.error('Failed to load teacher exams:', err);
+    }
+  }
+
   function renderCreatedExamsTable() {
     createdExamsTableBody.innerHTML = '';
-    createdExamsCount.textContent = `${state.exams.length} active exam blueprints`;
+    createdExamsCount.textContent = `${state.exams.length} active exam blueprint${state.exams.length === 1 ? '' : 's'}`;
+
+    if (state.exams.length === 0) {
+      createdExamsTableBody.innerHTML = `
+        <tr>
+          <td colspan="5" style="text-align: center; color: var(--text-muted); padding: 24px;">
+            No examinations created yet. Use the form on the left with a question document to publish one.
+          </td>
+        </tr>
+      `;
+      return;
+    }
 
     state.exams.forEach(exam => {
       const tr = document.createElement('tr');
+      const questionsCount = exam.questionsCount !== undefined ? exam.questionsCount : (exam.questions ? exam.questions.length : 0);
+      const submissionsCount = exam.submissionsCount !== undefined ? exam.submissionsCount : (exam.submissions || 0);
+
       tr.innerHTML = `
         <td>
           <span class="exam-meta-title">${exam.title}</span>
-          <span class="exam-meta-code">Target: ${exam.batch} • ${exam.questions.length} Questions</span>
+          <span class="exam-meta-code">Target: ${exam.batch || 'General'} • ${questionsCount} Questions • <span class="status-pill status-${(exam.status || 'draft').toLowerCase()}">${exam.status || 'DRAFT'}</span></span>
         </td>
         <td>
           <span class="code-pill">${exam.code}</span>
         </td>
         <td>${exam.duration} mins</td>
-        <td><strong>${exam.submissions}</strong> entries</td>
+        <td><strong>${submissionsCount}</strong> entries</td>
         <td>
           <div class="table-actions">
             <button type="button" class="btn btn-secondary btn-sm" onclick="copyAccessCode('${exam.code}', this)">
@@ -287,60 +318,77 @@ document.addEventListener('DOMContentLoaded', () => {
     const title = document.getElementById('examTitle').value.trim();
     const duration = parseInt(document.getElementById('examDuration').value, 10) || 45;
     const batch = document.getElementById('targetBatch').value.trim() || 'General Batch';
+    const btnPublish = document.getElementById('btnPublishExam');
 
-    // Generate unique code format: EXAM-XXXX
-    const randomFour = Math.floor(1000 + Math.random() * 9000);
-    const newCode = `EXAM-${randomFour}`;
+    const proceedWithQuestions = async (questions) => {
+      // Enforce: Do not publish an exam with zero valid questions. Do not fabricate questions.
+      if (!questions || questions.length === 0) {
+        alert('Cannot publish exam with zero questions.\n\nPlease upload a question file (.txt, .md, .json) formatted with questions, options, and answers before publishing.');
+        return;
+      }
 
-    // Sample question templates for dynamic creation
-    const newExam = {
-      code: newCode,
-      title: title,
-      duration: duration,
-      batch: batch,
-      submissions: 0,
-      questions: [
-        {
-          prompt: `Assessment Question 1 for ${title}: Which architectural pattern provides optimal decoupling for asynchronous event pipelines?`,
-          options: [
-            'Event-Driven Microservices with Distributed Commit Log (e.g. Apache Kafka)',
-            'Synchronous Monolithic RPC with hardcoded IP bindings',
-            'Point-to-point unbuffered socket streams',
-            'Periodic polling via single-threaded timer loops'
-          ],
-          correctIndex: 0
-        },
-        {
-          prompt: `Assessment Question 2 for ${title}: When deploying across multi-region cloud infrastructures, how is split-brain scenario prevented during a partition?`,
-          options: [
-            'Disabling database write logs entirely during the event',
-            'Enforcing Quorum-based leader election requiring (N/2 + 1) nodes',
-            'Accepting unverified writes blindly from all partitioned nodes',
-            'Shutting down all storage clusters permanently'
-          ],
-          correctIndex: 1
-        },
-        {
-          prompt: `Assessment Question 3 for ${title}: What is the primary purpose of circuit breaker patterns in distributed network requests?`,
-          options: [
-            'Preventing cascading system failures by failing fast when dependent services are degraded',
-            'Encrypting TLS packets at the kernel level',
-            'Accelerating DNS resolution via local caches',
-            'Compressing JSON request bodies into binary schemas'
-          ],
-          correctIndex: 0
+      btnPublish.disabled = true;
+      const originalBtnText = btnPublish.innerHTML;
+      btnPublish.innerHTML = '<span>Publishing Exam...</span>';
+
+      try {
+        const res = await fetch('/api/exams', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${state.token}`
+          },
+          body: JSON.stringify({
+            title,
+            durationMinutes: duration,
+            batch,
+            publishImmediately: true,
+            questions
+          })
+        });
+
+        const result = await res.json();
+
+        if (!res.ok || !result.success) {
+          alert(result.error?.message || 'Failed to publish examination.');
+          return;
         }
-      ]
+
+        const createdExam = result.data;
+        displayGeneratedCode.textContent = createdExam.accessCode;
+        publishedCodeBanner.classList.add('active');
+        publishedCodeBanner.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+        // Reset form inputs
+        document.getElementById('examTitle').value = '';
+        selectedFile = null;
+        if (fileNameDisplay) fileNameDisplay.textContent = '';
+        if (filePreview) filePreview.classList.remove('active');
+
+        // Re-fetch table from database
+        await fetchTeacherExams();
+      } catch (err) {
+        alert('Error communicating with server: ' + err.message);
+      } finally {
+        btnPublish.disabled = false;
+        btnPublish.innerHTML = originalBtnText;
+      }
     };
 
-    // Add to state and re-render
-    state.exams.unshift(newExam);
-    renderCreatedExamsTable();
-
-    // Reveal Highlight Banner
-    displayGeneratedCode.textContent = newCode;
-    publishedCodeBanner.classList.add('active');
-    publishedCodeBanner.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (selectedFile) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const fileContent = event.target.result;
+        const parsedQuestions = parseQuestionsFromText(fileContent);
+        proceedWithQuestions(parsedQuestions);
+      };
+      reader.onerror = () => {
+        alert('Failed to read uploaded question document.');
+      };
+      reader.readAsText(selectedFile);
+    } else {
+      proceedWithQuestions([]);
+    }
   });
 
   btnDismissBanner.addEventListener('click', () => {
@@ -382,21 +430,47 @@ document.addEventListener('DOMContentLoaded', () => {
   const preExamQuestions = document.getElementById('preExamQuestions');
   const btnStartExam = document.getElementById('btnStartExam');
 
-  function findAndDisplayExam(codeQuery) {
+  async function findAndDisplayExam(codeQuery) {
     const cleanCode = codeQuery.trim().toUpperCase();
-    const found = state.exams.find(e => e.code.toUpperCase() === cleanCode);
+    if (!cleanCode) return;
 
-    if (found) {
-      state.activeExam = found;
-      preExamTitle.textContent = found.title;
-      preExamBatch.textContent = `Target: ${found.batch} • Access Code: ${found.code}`;
-      preExamDuration.textContent = `${found.duration} Mins`;
-      preExamQuestions.textContent = `${found.questions.length} MCQs`;
-      preExamDetailsCard.classList.add('active');
-      preExamDetailsCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    } else {
-      alert(`Exam code "${codeQuery}" was not found. Please verify the code or check teacher portal.`);
-      preExamDetailsCard.classList.remove('active');
+    const btnFind = document.getElementById('btnFindExam');
+    if (btnFind) btnFind.disabled = true;
+
+    try {
+      const res = await fetch(`/api/exams/code/${encodeURIComponent(cleanCode)}`);
+      const result = await res.json();
+
+      if (res.ok && result.success) {
+        const found = result.data;
+        state.activeExam = found;
+        preExamTitle.textContent = found.title;
+        preExamBatch.textContent = `Target: ${found.batch || 'General'} • Access Code: ${found.code}`;
+        preExamDuration.textContent = `${found.duration} Mins`;
+        preExamQuestions.textContent = `${found.questionCount || 0} Questions`;
+        preExamDetailsCard.classList.add('active');
+        preExamDetailsCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      } else {
+        alert(result.error?.message || `Exam code "${codeQuery}" was not found or is not currently active.`);
+        preExamDetailsCard.classList.remove('active');
+      }
+    } catch (err) {
+      // Local fallback if server unreachable
+      const localFound = state.exams.find(e => e.code && e.code.toUpperCase() === cleanCode);
+      if (localFound) {
+        state.activeExam = localFound;
+        preExamTitle.textContent = localFound.title;
+        preExamBatch.textContent = `Target: ${localFound.batch} • Access Code: ${localFound.code}`;
+        preExamDuration.textContent = `${localFound.duration} Mins`;
+        preExamQuestions.textContent = `${localFound.questions ? localFound.questions.length : (localFound.questionsCount || 0)} Questions`;
+        preExamDetailsCard.classList.add('active');
+        preExamDetailsCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      } else {
+        alert(`Exam code "${codeQuery}" was not found.`);
+        preExamDetailsCard.classList.remove('active');
+      }
+    } finally {
+      if (btnFind) btnFind.disabled = false;
     }
   }
 
@@ -679,23 +753,39 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnDismissWarningModal = document.getElementById('btnDismissWarningModal');
   const warningStrikeNum = document.getElementById('warningStrikeNum');
 
+  let lastStrikeTime = 0;
+
   function triggerProctorStrike() {
     const runnerScreen = document.getElementById('screen-runner');
     // Only track if currently in active exam runner
-    if (runnerScreen.classList.contains('active')) {
-      state.strikeCount++;
-      warningStrikeNum.textContent = state.strikeCount;
-      tabWarningModal.classList.add('active');
+    if (!runnerScreen || !runnerScreen.classList.contains('active')) {
+      return;
+    }
 
-      if (state.strikeCount >= 3) {
-        alert('Disqualification Notice: 3 integrity strikes exceeded. Your exam will be immediately submitted.');
-        tabWarningModal.classList.remove('active');
-        submitExam(true);
-      }
+    // Do not trigger another strike while the warning modal is already open
+    if (tabWarningModal.classList.contains('active')) {
+      return;
+    }
+
+    // Cooldown protection: prevent rapid duplicate triggers within 2 seconds
+    const now = Date.now();
+    if (now - lastStrikeTime < 2000) {
+      return;
+    }
+    lastStrikeTime = now;
+
+    state.strikeCount++;
+    warningStrikeNum.textContent = state.strikeCount;
+    tabWarningModal.classList.add('active');
+
+    if (state.strikeCount >= 3) {
+      alert('Disqualification Notice: 3 integrity strikes exceeded. Your exam will be immediately submitted.');
+      tabWarningModal.classList.remove('active');
+      submitExam(true);
     }
   }
 
-  window.addEventListener('blur', triggerProctorStrike);
+  // Detect genuine tab switches or minimizing browser (Page Visibility API)
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') {
       triggerProctorStrike();
