@@ -65,6 +65,7 @@ test('Submission Answer Persistence & Exam Submission Suite', async (t) => {
   });
 
   t.after(async () => {
+    server.closeAllConnections();
     await new Promise((resolve) => server.close(resolve));
     await closePool();
   });
