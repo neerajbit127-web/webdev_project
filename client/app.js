@@ -774,6 +774,7 @@ document.addEventListener('DOMContentLoaded', () => {
      7. Answer Save Debounce (network persistence layer)
      -------------------------------------------------------------------------- */
   const _answerSaveQueue = {};
+  const _pendingAnswerValues = {};
 
   function showAnswerSaveError(msg) {
     let toast = document.getElementById('answerSaveToast');
@@ -794,7 +795,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function debounceSaveAnswer(questionIndex, optionIndex) {
     clearTimeout(_answerSaveQueue[questionIndex]);
+    _pendingAnswerValues[questionIndex] = optionIndex;
     _answerSaveQueue[questionIndex] = setTimeout(() => {
+      delete _answerSaveQueue[questionIndex];
+      delete _pendingAnswerValues[questionIndex];
       saveAnswerToServer(questionIndex, optionIndex);
     }, 500);
   }
@@ -864,6 +868,17 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     try {
+      // Flush debounced answer writes before finalizing so the last selection
+      // cannot be lost when the student submits immediately.
+      const pendingWrites = Object.entries(_pendingAnswerValues).map(([index, optionIndex]) => {
+        const questionIndex = Number(index);
+        clearTimeout(_answerSaveQueue[questionIndex]);
+        delete _answerSaveQueue[questionIndex];
+        delete _pendingAnswerValues[questionIndex];
+        return saveAnswerToServer(questionIndex, optionIndex);
+      });
+      await Promise.allSettled(pendingWrites);
+
       const finalReason = isAuto ? 'AUTO_SUBMITTED' : (reason || 'MANUAL');
       const res = await fetch(`/api/submissions/${state.submissionId}/submit`, {
         method: 'POST',
@@ -887,11 +902,13 @@ document.addEventListener('DOMContentLoaded', () => {
           <strong>Security Audit:</strong> ${state.strikeCount} proctoring strikes recorded
         `;
       } else {
-        // Server error — show what we know
+        // Do not imply that the server recorded a submission when it did not.
+        resultModalDesc.textContent = 'The server could not confirm your submission. Your answers may still be saved, but the result is not verified. Reconnect and retry submission.';
         _showLocalResult(isAuto);
         console.warn('Submit API error:', result);
       }
     } catch (err) {
+      resultModalDesc.textContent = 'The server could not be reached to confirm your submission. Your result is not verified. Reconnect and retry submission.';
       _showLocalResult(isAuto);
       console.warn('Submit network error:', err);
     }
@@ -934,14 +951,17 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('submitResultModal').classList.remove('active');
     preExamDetailsCard.classList.remove('active');
     inputExamCode.value = '';
-    // Clear active session state
+    // Clear the cached answers before clearing the submission identifier.
+    try {
+      if (state.submissionId) localStorage.removeItem(`ep_answers_${state.submissionId}`);
+    } catch (_) {}
+    Object.values(_answerSaveQueue).forEach(clearTimeout);
+    Object.keys(_answerSaveQueue).forEach(key => delete _answerSaveQueue[key]);
+    Object.keys(_pendingAnswerValues).forEach(key => delete _pendingAnswerValues[key]);
     state.submissionId = null;
     state.activeExam = null;
     state.userAnswers = {};
     state.strikeCount = 0;
-    try {
-      if (state.submissionId) localStorage.removeItem(`ep_answers_${state.submissionId}`);
-    } catch (_) {}
     clearAnswerSaveError();
     showScreen('screen-student-dash');
   });
