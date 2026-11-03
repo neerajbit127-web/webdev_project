@@ -112,7 +112,8 @@ try {
     $env:PGPASSWORD = $dbPassword
     $databaseExists = & psql -h $dbHost -p $dbPort -U $dbUser -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname = '$($dbName.Replace("'", "''"))';"
     if ($LASTEXITCODE -ne 0) { throw 'Could not connect to PostgreSQL. Check that the service is running and the host, port, user, and password are correct.' }
-    if ($databaseExists.Trim() -ne '1') {
+    $databaseExistsText = ($databaseExists | Out-String).Trim()
+    if ($databaseExistsText -ne '1') {
         & createdb -h $dbHost -p $dbPort -U $dbUser $dbName
         if ($LASTEXITCODE -ne 0) { throw "Could not create database '$dbName'." }
         Write-Host "Created database '$dbName'." -ForegroundColor Green
