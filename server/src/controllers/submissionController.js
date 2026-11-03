@@ -364,7 +364,7 @@ export async function submitExamHandler(req, res) {
          FROM submissions s
          JOIN exams e ON e.id = s.exam_id
         WHERE s.id = $1
-        FOR UPDATE LIMIT 1;`,
+        LIMIT 1 FOR UPDATE;`,
       [submissionId]
     );
 
