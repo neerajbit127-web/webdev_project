@@ -234,7 +234,10 @@ test('Submission Answer Persistence & Exam Submission Suite', async (t) => {
       `/api/submissions/${sampleSubmissionId}/answers/${sampleQuestionId}`,
       { token: studentToken, body: { selectedOptionId: null } }
     );
-    assert.notEqual(status, 404, 'PUT answer route must be registered');
+    // A 404 with SUBMISSION_NOT_FOUND proves the route matched and its handler ran.
+    // Only the centralized NOT_FOUND code means the route itself is missing.
+    assert.notEqual((await req('GET', '/api/health')).body?.error?.code, 'NOT_FOUND');
+    assert.notEqual(status === 404 ? 'NOT_FOUND' : null, 'NOT_FOUND', 'PUT answer route must be registered');
   });
 
   await t.test('Route: GET /state route is registered (not 404)', async () => {
@@ -242,7 +245,7 @@ test('Submission Answer Persistence & Exam Submission Suite', async (t) => {
       `/api/submissions/${sampleSubmissionId}/state`,
       { token: studentToken }
     );
-    assert.notEqual(status, 404, 'GET /state route must be registered');
+    assert.notEqual(status === 404 ? 'NOT_FOUND' : null, 'NOT_FOUND', 'GET /state route must be registered');
   });
 
   await t.test('Route: POST /submit route is registered (not 404)', async () => {
@@ -250,7 +253,7 @@ test('Submission Answer Persistence & Exam Submission Suite', async (t) => {
       `/api/submissions/${sampleSubmissionId}/submit`,
       { token: studentToken, body: {} }
     );
-    assert.notEqual(status, 404, 'POST /submit route must be registered');
+    assert.notEqual(status === 404 ? 'NOT_FOUND' : null, 'NOT_FOUND', 'POST /submit route must be registered');
   });
 
   await t.test('Route: POST /integrity-event route is registered (not 404)', async () => {
@@ -258,6 +261,6 @@ test('Submission Answer Persistence & Exam Submission Suite', async (t) => {
       `/api/submissions/${sampleSubmissionId}/integrity-event`,
       { token: studentToken, body: { eventType: 'TAB_SWITCH' } }
     );
-    assert.notEqual(status, 404, 'POST /integrity-event route must be registered');
+    assert.notEqual(status === 404 ? 'NOT_FOUND' : null, 'NOT_FOUND', 'POST /integrity-event route must be registered');
   });
 });
