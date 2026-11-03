@@ -269,7 +269,8 @@ export async function putAnswer(req, res) {
   // Only accept selectedOptionId — ignore any other client-sent fields
   const { selectedOptionId = null } = req.body;
 
-  const client = await pool.connect();
+  const client = await connectOrRespond(res);
+  if (!client) return;
   try {
     // Fetch submission with ownership check
     const sub = await fetchOwnedSubmission(client, submissionId, currentUserId, isAdmin);
@@ -371,7 +372,8 @@ export async function submitExamHandler(req, res) {
   const { reason } = req.body || {};
   const forceStatus = reason === 'FORCE_SUBMITTED' ? 'FORCE_SUBMITTED' : null;
 
-  const client = await pool.connect();
+  const client = await connectOrRespond(res);
+  if (!client) return;
   try {
     await client.query('BEGIN');
 
@@ -488,7 +490,8 @@ export async function recordIntegrityEvent(req, res) {
     return sendError(res, { statusCode: 400, code: 'MISSING_EVENT_TYPE', message: 'eventType is required.' });
   }
 
-  const client = await pool.connect();
+  const client = await connectOrRespond(res);
+  if (!client) return;
   try {
     // Verify ownership without locking
     const { rows } = await client.query(
