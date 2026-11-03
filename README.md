@@ -47,7 +47,7 @@ The root `src/`, `public/`, and legacy root-level HTML/JS files are older copies
    Copy-Item server/.env.example server/.env
    ```
 
-   Edit `server/.env`. Set `DB_PASSWORD` to your local PostgreSQL password, or set `DATABASE_URL`. For local development, keep `DB_SSL=false`. Set `CLIENT_ORIGIN=http://localhost:5000` when using the bundled frontend served by Express.
+   Edit `server/.env`. The template leaves `DATABASE_URL` blank, so you can set `DB_PASSWORD` to your local PostgreSQL password and keep the default `DB_HOST`, `DB_PORT`, `DB_NAME`, and `DB_USER` values. Alternatively, replace the blank `DATABASE_URL` with your full PostgreSQL connection string (it takes precedence over the individual `DB_*` settings). For local development, keep `DB_SSL=false` if that option is present. Set `CLIENT_ORIGIN=http://localhost:5000` when using the bundled frontend served by Express.
 
 5. Apply the database schema:
 
