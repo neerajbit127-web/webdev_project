@@ -1,0 +1,48 @@
+# =============================================================================
+# Render Infrastructure-as-Code Blueprint
+# Deploys Express REST API Web Service + Managed PostgreSQL Database
+# Zero-Downtime Deployment with Automated Health Checks & Database Migrations
+# =============================================================================
+
+services:
+  # ---------------------------------------------------------------------------
+  # 1. Express Backend Web Service
+  # ---------------------------------------------------------------------------
+  - type: web
+    name: exam-portal-service
+    env: node
+    plan: starter
+    region: oregon
+    buildCommand: npm install && npm run migrate
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 24h
+      - key: RATE_LIMIT_MAX
+        value: 500
+      - key: DB_SSL
+        value: "true"
+      # Wire DATABASE_URL directly from the PostgreSQL instance below
+      - key: DATABASE_URL
+        fromDatabase:
+          name: exam-portal-db
+          property: connectionString
+
+# -----------------------------------------------------------------------------
+# 2. Managed PostgreSQL Database Instance
+# -----------------------------------------------------------------------------
+databases:
+  - name: exam-portal-db
+    databaseName: exam_portal_db
+    user: exam_portal_admin
+    region: oregon
+    plan: starter
+    postgresMajorVersion: "16"

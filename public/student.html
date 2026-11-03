@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Student Exam Runner — CS402 | ExamPortal</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- ======================================================================
+       STICKY RUNNER HEADER
+       ====================================================================== -->
+  <header class="runner-header">
+    <div class="runner-header-inner">
+      
+      <!-- Left: Exam Title & Context -->
+      <div class="exam-title-group">
+        <h1 class="exam-main-heading">CS402: Advanced Distributed Systems</h1>
+        <span class="exam-sub-info">Final Assessment • Session Token: 98b2-c04f</span>
+      </div>
+
+      <!-- Center: Student Identity -->
+      <div class="candidate-box">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+          <circle cx="12" cy="7" r="4"/>
+        </svg>
+        <div>
+          <div class="candidate-name">Elena Rostova</div>
+          <div class="candidate-id">Candidate ID: ST-94821</div>
+        </div>
+      </div>
+
+      <!-- Right: Precision Digital Countdown Timer -->
+      <div class="timer-container">
+        <div class="timer-box warning-state" aria-live="polite" aria-atomic="true">
+          <span class="timer-label">Time Remaining</span>
+          <span class="timer-value" id="countdownClock">00:44:58</span>
+        </div>
+
+        <button type="button" class="btn btn-primary btn-sm" id="btnHeaderSubmit" onclick="openSubmitConfirm()">
+          Submit Exam
+        </button>
+      </div>
+
+    </div>
+  </header>
+
+  <!-- ======================================================================
+       MAIN EXAM BODY
+       ====================================================================== -->
+  <div class="runner-layout">
+    
+    <!-- LEFT SIDEBAR: Question Navigation Grid -->
+    <aside class="exam-sidebar" aria-label="Question Navigation Matrix">
+      <section class="card">
+        <header class="card-header" style="padding: 14px 18px;">
+          <h2 class="card-title card-title-sm">Question Navigator</h2>
+          <span class="exam-meta-code">20 Questions</span>
+        </header>
+
+        <div class="card-body card-body-compact">
+          
+          <!-- Summary Counts -->
+          <div class="sidebar-stats">
+            <div class="stat-chip">
+              <span class="stat-number primary-stat" id="answeredCount">3</span>
+              <span class="stat-label">Answered</span>
+            </div>
+            <div class="stat-chip">
+              <span class="stat-number muted-stat" id="unansweredCount">17</span>
+              <span class="stat-label">Pending</span>
+            </div>
+          </div>
+
+          <!-- Numbered Question Grid (Buttons 1 to 20) -->
+          <div class="question-grid" role="group" aria-label="Question selector buttons">
+            <button type="button" class="q-btn answered" onclick="goToQuestion(1)">01</button>
+            <button type="button" class="q-btn answered" onclick="goToQuestion(2)">02</button>
+            <button type="button" class="q-btn answered" onclick="goToQuestion(3)">03</button>
+            <button type="button" class="q-btn current" id="gridBtn4" onclick="goToQuestion(4)">04</button>
+            <button type="button" class="q-btn unanswered" onclick="goToQuestion(5)">05</button>
+            <button type="button" class="q-btn unanswered" onclick="goToQuestion(6)">06</button>
+            <button type="button" class="q-btn unanswered" onclick="goToQuestion(7)">07</button>
+            <button type="button" class="q-btn unanswered" onclick="goToQuestion(8)">08</button>
+            <button type="button" class="q-btn unanswered" onclick="goToQuestion(9)">09</button>
+            <button type="button" class="q-btn unanswered" onclick="goToQuestion(10)">10</button>
+            <button type="button" class="q-btn unanswered" onclick="goToQuestion(11)">11</button>
+            <button type="button" class="q-btn unanswered" onclick="goToQuestion(12)">12</button>
+            <button type="button" class="q-btn unanswered" onclick="goToQuestion(13)">13</button>
+            <button type="button" class="q-btn unanswered" onclick="goToQuestion(14)">14</button>
+            <button type="button" class="q-btn unanswered" onclick="goToQuestion(15)">15</button>
+            <button type="button" class="q-btn unanswered" onclick="goToQuestion(16)">16</button>
+            <button type="button" class="q-btn unanswered" onclick="goToQuestion(17)">17</button>
+            <button type="button" class="q-btn unanswered" onclick="goToQuestion(18)">18</button>
+            <button type="button" class="q-btn unanswered" onclick="goToQuestion(19)">19</button>
+            <button type="button" class="q-btn unanswered" onclick="goToQuestion(20)">20</button>
+          </div>
+
+          <!-- Status Legend -->
+          <ul class="legend-list">
+            <li class="legend-item">
+              <span class="legend-indicator ind-answered"></span>
+              <span>Answered (Solid Blue)</span>
+            </li>
+            <li class="legend-item">
+              <span class="legend-indicator ind-current"></span>
+              <span>Current Question (Bold Border)</span>
+            </li>
+            <li class="legend-item">
+              <span class="legend-indicator ind-unanswered"></span>
+              <span>Unanswered (Light Gray)</span>
+            </li>
+          </ul>
+
+        </div>
+      </section>
+
+      <!-- Testing Trigger (To inspect modal easily) -->
+      <div style="margin-top: 14px; text-align: center;">
+        <button type="button" class="btn btn-secondary btn-sm" id="btnTestWarningModal" style="width: 100%;">
+          Test Warning Modal
+        </button>
+        <div style="margin-top: 8px;">
+          <a href="teacher.html" class="form-hint" style="text-decoration: underline;">&larr; Back to Teacher Portal</a>
+        </div>
+      </div>
+
+    </aside>
+
+    <!-- CENTER FOCUS AREA: Single Question Card -->
+    <main class="question-container">
+      <article class="card" aria-labelledby="currentQuestionHeading">
+        
+        <!-- Question Meta Header -->
+        <header class="question-header">
+          <div class="question-number-badge" id="currentQuestionHeading">
+            Question 04 of 20
+          </div>
+          <div class="question-weights">
+            <span class="weight-tag">Marks: +2.00</span>
+            <span class="weight-tag">Negative: -0.50</span>
+            <span class="weight-tag weight-tag-primary">Single Choice</span>
+          </div>
+        </header>
+
+        <!-- Question Prompt -->
+        <div class="question-content">
+          <p class="question-prompt">
+            In the <strong>Raft consensus algorithm</strong>, which condition must be met before a Leader node is permitted to safely commit a log entry originated from its <em>current term</em> to the state machine?
+          </p>
+
+          <!-- 4 Styled Option Blocks with Radio Buttons -->
+          <fieldset class="options-group">
+            <legend class="sr-only">Answer Choices for Question 4</legend>
+
+            <!-- Option A -->
+            <label class="option-block" for="optA" onclick="handleOptionSelect(this)">
+              <input type="radio" id="optA" name="question4_answer" class="option-radio" value="A">
+              <span class="option-identifier">A.</span>
+              <span class="option-text">The entry has been replicated on at least one candidate node and verified by a two-phase commit coordinator.</span>
+            </label>
+
+            <!-- Option B -->
+            <label class="option-block" for="optB" onclick="handleOptionSelect(this)">
+              <input type="radio" id="optB" name="question4_answer" class="option-radio" value="B">
+              <span class="option-identifier">B.</span>
+              <span class="option-text">The entry has been successfully replicated on a strict majority (quorum) of the cluster servers.</span>
+            </label>
+
+            <!-- Option C -->
+            <label class="option-block" for="optC" onclick="handleOptionSelect(this)">
+              <input type="radio" id="optC" name="question4_answer" class="option-radio" value="C">
+              <span class="option-identifier">C.</span>
+              <span class="option-text">Every follower has responded with an explicit acknowledgement and applied the command locally.</span>
+            </label>
+
+            <!-- Option D -->
+            <label class="option-block" for="optD" onclick="handleOptionSelect(this)">
+              <input type="radio" id="optD" name="question4_answer" class="option-radio" value="D">
+              <span class="option-identifier">D.</span>
+              <span class="option-text">The entry matches the hash sequence of an entry previously committed in an earlier epoch.</span>
+            </label>
+
+          </fieldset>
+        </div>
+
+        <!-- Question Navigation & Action Footer -->
+        <footer class="question-footer">
+          <button type="button" class="btn btn-secondary" onclick="goToQuestion(3)">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="m15 18-6-6 6-6"/>
+            </svg>
+            <span>Previous</span>
+          </button>
+
+          <div class="nav-buttons-right">
+            <button type="button" class="btn btn-secondary" onclick="clearOptionSelection()">
+              Clear Selection
+            </button>
+            <button type="button" class="btn btn-primary" onclick="goToQuestion(5)">
+              <span>Next Question</span>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="m9 18 6-6-6-6"/>
+              </svg>
+            </button>
+          </div>
+        </footer>
+
+      </article>
+    </main>
+
+  </div>
+
+  <!-- ======================================================================
+       ANTI-CHEAT & ALERT OVERLAY: TAB-SWITCH WARNING MODAL
+       ====================================================================== -->
+  <aside class="modal-overlay" id="tabWarningModal" role="dialog" aria-modal="true" aria-labelledby="modalTitle" aria-describedby="modalDesc">
+    <div class="modal-card">
+      <div class="modal-body">
+        
+        <!-- Warning Icon -->
+        <div class="modal-warning-icon" aria-hidden="true">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/>
+            <line x1="12" y1="9" x2="12" y2="13"/>
+            <line x1="12" y1="17" x2="12.01" y2="17"/>
+          </svg>
+        </div>
+
+        <h3 class="modal-title" id="modalTitle">Tab-Switch Warning</h3>
+        <p class="modal-desc" id="modalDesc">
+          You navigated away from the exam viewport or switched browser tabs. This action has been logged into your test integrity telemetry stream.
+        </p>
+
+        <div class="modal-warning-box">
+          <strong>Integrity Notice:</strong> Strike 1 of 3 recorded.<br>
+          <span class="modal-warning-subtext">Exceeding 3 strikes triggers automated disqualification and immediate exam submission.</span>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn btn-primary" id="btnDismissModal" onclick="closeWarningModal()">
+            I Understand
+          </button>
+        </div>
+
+      </div>
+    </div>
+  </aside>
+
+  <script src="script.js"></script>
+</body>
+</html>
