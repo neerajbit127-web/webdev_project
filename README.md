@@ -27,13 +27,29 @@ The root `src/`, `public/`, and legacy root-level HTML/JS files are older copies
    cd ExamPortal
    ```
 
-2. Install backend dependencies:
+2. Install Node.js 18+ and PostgreSQL 14+. Ensure `node`, `npm`, `psql`, and `createdb` are available in PowerShell. If PostgreSQL tools are missing, add the PostgreSQL `bin` directory (usually `C:\Program Files\PostgreSQL\<version>\bin`) to PATH and reopen PowerShell.
+
+3. **Recommended: run the interactive setup script.** It creates the local database if needed, writes `server/.env`, installs dependencies, applies migrations, creates teacher/student accounts, and runs backend tests. It asks for your PostgreSQL connection and account credentials; password input is hidden.
+
+   ```powershell
+   .\server\scripts\setup-local.ps1
+   ```
+
+   If PowerShell blocks local scripts, run this in the current terminal and then rerun the script:
+
+   ```powershell
+   Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+   ```
+
+   If you prefer manual setup, continue with step 4 instead.
+
+4. Install backend dependencies:
 
    ```powershell
    npm run install:server
    ```
 
-3. Create the PostgreSQL database (run once, using a PostgreSQL superuser):
+5. Create the PostgreSQL database (using a PostgreSQL superuser):
 
    ```powershell
    createdb -U postgres exam_portal_db
@@ -41,21 +57,15 @@ The root `src/`, `public/`, and legacy root-level HTML/JS files are older copies
 
    Alternatively, in `psql` run `CREATE DATABASE exam_portal_db;`.
 
-4. Create the server environment file:
+6. Create and configure the server environment file:
 
    ```powershell
    Copy-Item server/.env.example server/.env
    ```
 
-   Edit `server/.env`. The template leaves `DATABASE_URL` blank, so you can set `DB_PASSWORD` to your local PostgreSQL password and keep the default `DB_HOST`, `DB_PORT`, `DB_NAME`, and `DB_USER` values. Alternatively, replace the blank `DATABASE_URL` with your full PostgreSQL connection string (it takes precedence over the individual `DB_*` settings). For local development, keep `DB_SSL=false` if that option is present. Set `CLIENT_ORIGIN=http://localhost:5000` when using the bundled frontend served by Express.
+   The template leaves `DATABASE_URL` blank, so set `DB_PASSWORD` to your local PostgreSQL password and keep the default `DB_HOST`, `DB_PORT`, `DB_NAME`, and `DB_USER` values. Alternatively, set `DATABASE_URL` to your full PostgreSQL connection string; it takes precedence over the individual `DB_*` settings. Set `CLIENT_ORIGIN=http://localhost:5000` for the bundled frontend.
 
-5. Apply the database schema:
-
-   ```powershell
-   npm run migrate
-   ```
-
-6. Provision the first teacher and student accounts. Add these values to `server/.env` before running the seed command:
+   Add these account values to `server/.env` (use unique passwords of at least 12 characters):
 
    ```env
    SEED_TEACHER_NAME=ExamPortal Teacher
@@ -67,23 +77,22 @@ The root `src/`, `public/`, and legacy root-level HTML/JS files are older copies
    SEED_STUDENT_PASSWORD=replace_with_another_long_unique_password
    ```
 
-   Use unique passwords of at least 12 characters. Then run:
+7. Apply the schema and create the accounts:
 
    ```powershell
+   npm run migrate
    npm run seed
+   npm test
    ```
 
-   The seed command creates or updates those two accounts. It does not create fixed public demo credentials.
-
-7. Start the application:
+8. Start the application:
 
    ```powershell
    npm run dev
    ```
 
-   Open [http://localhost:5000](http://localhost:5000). The API health endpoint is [http://localhost:5000/api/health](http://localhost:5000/api/health).
+   Open [http://localhost:5000](http://localhost:5000). Check [http://localhost:5000/api/health](http://localhost:5000/api/health) for API and database status. For a normal start without file watching, use `npm start`.
 
-For a normal start without file watching, use `npm start`.
 
 ## Useful commands
 
