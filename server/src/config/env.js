@@ -27,7 +27,7 @@ function validateEnv() {
   }
 
   // Client origins for CORS
-  const rawOrigins = process.env.CLIENT_ORIGIN || 'http://localhost:5500,http://127.0.0.1:5500,http://localhost:3000';
+  const rawOrigins = process.env.CLIENT_ORIGIN || process.env.RENDER_EXTERNAL_URL || 'http://localhost:5000,http://127.0.0.1:5000';
   const clientOrigins = rawOrigins.split(',').map(o => o.trim()).filter(Boolean);
   if (clientOrigins.length === 0) {
     errors.push('CLIENT_ORIGIN must contain at least one valid origin URL.');
