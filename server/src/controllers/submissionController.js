@@ -411,8 +411,9 @@ export async function submitExamHandler(req, res) {
       });
     }
 
-    // Score and finalize
-    const finalStatus = forceStatus || 'SUBMITTED';
+    // The database deadline is authoritative even if the client submits late.
+    const isPastDeadline = Number(sub.remaining_seconds ?? 0) <= 0;
+    const finalStatus = isPastDeadline ? 'AUTO_SUBMITTED' : (forceStatus || 'SUBMITTED');
     const scores = await scoreAndFinalise(client, sub, finalStatus);
     await client.query('COMMIT');
 
