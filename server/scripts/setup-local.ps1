@@ -102,7 +102,7 @@ SEED_STUDENT_EMAIL=$(Escape-DotEnv $studentEmail)
 SEED_STUDENT_ID=$(Escape-DotEnv $studentId)
 SEED_STUDENT_PASSWORD=$(Escape-DotEnv $studentPassword)
 "@
-Set-Content -Path $envPath -Value $envContent -Encoding UTF8
+[System.IO.File]::WriteAllText($envPath, $envContent, (New-Object System.Text.UTF8Encoding($false)))
 Write-Host 'Created server/.env (credentials are not printed).' -ForegroundColor Green
 
 try {
