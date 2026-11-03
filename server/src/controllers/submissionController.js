@@ -6,6 +6,26 @@ import { sanitizeQuestionsForStudent } from './studentExamController.js';
    Internal helpers
    ───────────────────────────────────────────────────────────────────────────── */
 
+/**
+ * Acquires a PostgreSQL client and converts connection failures into a stable
+ * API response instead of an unhandled async rejection (Express 4).
+ */
+async function connectOrRespond(res) {
+  try {
+    return await pool.connect();
+  } catch (error) {
+    if (error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT') {
+      sendError(res, {
+        statusCode: 503,
+        code: 'DATABASE_UNAVAILABLE',
+        message: 'Database connection unavailable.'
+      });
+      return null;
+    }
+    throw error;
+  }
+}
+
 /** Verify ownership and return the submission row, or send an error. */
 async function fetchOwnedSubmission(client, submissionId, currentUserId, isAdmin) {
   const { rows } = await client.query(
@@ -133,7 +153,8 @@ export async function getSubmissionState(req, res) {
   const currentUserId = req.user.id;
   const isAdmin = req.user.role === 'ADMIN';
 
-  const client = await pool.connect();
+  const client = await connectOrRespond(res);
+  if (!client) return;
   try {
     const sub = await fetchOwnedSubmission(client, submissionId, currentUserId, isAdmin);
 
