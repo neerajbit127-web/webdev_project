@@ -17,15 +17,33 @@ import {
   reorderQuestions,
   unpublishExam
 } from '../controllers/questionController.js';
+import {
+  lookupExam,
+  getStudentExamInfo,
+  startExam
+} from '../controllers/studentExamController.js';
 import { verifyAuth, requireRole } from '../middleware/auth.js';
 
 export const examRouter = Router();
 
-// Public / Student Lookup Endpoint
-examRouter.get('/code/:code', getExamByAccessCode);
+// Student-only authentication guards
+const studentOnly = [verifyAuth, requireRole('STUDENT', 'ADMIN')];
 
 // Teacher Exam Management Endpoints (Require TEACHER or ADMIN)
 const teacherOnly = [verifyAuth, requireRole('TEACHER', 'ADMIN')];
+
+// --- Student Discovery & Start Endpoints ---
+// POST /api/exams/lookup - student access-code lookup
+examRouter.post('/lookup', ...studentOnly, lookupExam);
+
+// Legacy/Compatibility GET lookup by code
+examRouter.get('/code/:code', getExamByAccessCode);
+
+// GET /api/exams/:id/student-info - student safe pre-exam summary
+examRouter.get('/:id/student-info', ...studentOnly, getStudentExamInfo);
+
+// POST /api/exams/:id/start - create or resume student attempt
+examRouter.post('/:id/start', ...studentOnly, startExam);
 
 // --- Core Exam Endpoints ---
 // GET /api/exams/mine - list teacher's exams
@@ -59,7 +77,7 @@ examRouter.get('/:examId/questions', ...teacherOnly, getExamQuestions);
 // POST /api/exams/:examId/questions - create question in exam draft
 examRouter.post('/:examId/questions', ...teacherOnly, createQuestion);
 
-// PUT /api/exams/:examId/questions/reorder - reorder questions (placed before :questionId to avoid route collision)
+// PUT /api/exams/:examId/questions/reorder - reorder questions (placed before :questionId)
 examRouter.put('/:examId/questions/reorder', ...teacherOnly, reorderQuestions);
 
 // PATCH /api/exams/:examId/questions/:questionId - update single question and options

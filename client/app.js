@@ -404,18 +404,32 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  btnJumpToStudentTest.addEventListener('click', () => {
+  btnJumpToStudentTest.addEventListener('click', async () => {
     const code = displayGeneratedCode.textContent;
-    state.currentUser = {
-      role: 'STUDENT',
-      name: 'Elena Rostova',
-      identifier: 'ST-94821'
-    };
-    document.getElementById('studentDisplayName').textContent = state.currentUser.name;
-    document.getElementById('studentDisplayId').textContent = `Student ID: ${state.currentUser.identifier}`;
+
+    // Authenticate as demo student if currently on teacher profile
+    if (!state.currentUser || state.currentUser.role !== 'STUDENT') {
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ identifier: 'ST-94821', password: 'password123', role: 'STUDENT' })
+        });
+        const result = await res.json();
+        if (res.ok && result.success) {
+          state.token = result.data.token;
+          state.currentUser = result.data.user;
+          localStorage.setItem('examportal_token', state.token);
+        }
+      } catch (_) {}
+    }
+
+    state.currentRole = 'STUDENT';
+    document.getElementById('studentDisplayName').textContent = state.currentUser ? (state.currentUser.fullName || state.currentUser.name) : 'Elena Rostova';
+    document.getElementById('studentDisplayId').textContent = `Student ID: ${state.currentUser ? (state.currentUser.studentId || state.currentUser.identifier) : 'ST-94821'}`;
     document.getElementById('inputExamCode').value = code;
     showScreen('screen-student-dash');
-    findAndDisplayExam(code);
+    await findAndDisplayExam(code);
   });
 
   /* --------------------------------------------------------------------------
@@ -437,8 +451,33 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnFind = document.getElementById('btnFindExam');
     if (btnFind) btnFind.disabled = true;
 
+    // Ensure student is authenticated before lookup
+    if (!state.token || !state.currentUser || state.currentUser.role !== 'STUDENT') {
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ identifier: 'ST-94821', password: 'password123', role: 'STUDENT' })
+        });
+        const result = await res.json();
+        if (res.ok && result.success) {
+          state.token = result.data.token;
+          state.currentUser = result.data.user;
+          localStorage.setItem('examportal_token', state.token);
+        }
+      } catch (_) {}
+    }
+
     try {
-      const res = await fetch(`/api/exams/code/${encodeURIComponent(cleanCode)}`);
+      // POST /api/exams/lookup with accessCode
+      const res = await fetch('/api/exams/lookup', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${state.token}`
+        },
+        body: JSON.stringify({ accessCode: cleanCode })
+      });
       const result = await res.json();
 
       if (res.ok && result.success) {
@@ -446,7 +485,7 @@ document.addEventListener('DOMContentLoaded', () => {
         state.activeExam = found;
         preExamTitle.textContent = found.title;
         preExamBatch.textContent = `Target: ${found.batch || 'General'} • Access Code: ${found.code}`;
-        preExamDuration.textContent = `${found.duration} Mins`;
+        preExamDuration.textContent = `${found.durationMinutes || found.duration} Mins`;
         preExamQuestions.textContent = `${found.questionCount || 0} Questions`;
         preExamDetailsCard.classList.add('active');
         preExamDetailsCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -455,20 +494,8 @@ document.addEventListener('DOMContentLoaded', () => {
         preExamDetailsCard.classList.remove('active');
       }
     } catch (err) {
-      // Local fallback if server unreachable
-      const localFound = state.exams.find(e => e.code && e.code.toUpperCase() === cleanCode);
-      if (localFound) {
-        state.activeExam = localFound;
-        preExamTitle.textContent = localFound.title;
-        preExamBatch.textContent = `Target: ${localFound.batch} • Access Code: ${localFound.code}`;
-        preExamDuration.textContent = `${localFound.duration} Mins`;
-        preExamQuestions.textContent = `${localFound.questions ? localFound.questions.length : (localFound.questionsCount || 0)} Questions`;
-        preExamDetailsCard.classList.add('active');
-        preExamDetailsCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      } else {
-        alert(`Exam code "${codeQuery}" was not found.`);
-        preExamDetailsCard.classList.remove('active');
-      }
+      alert('Connection error checking exam code with assessment server.');
+      preExamDetailsCard.classList.remove('active');
     } finally {
       if (btnFind) btnFind.disabled = false;
     }
@@ -479,9 +506,64 @@ document.addEventListener('DOMContentLoaded', () => {
     findAndDisplayExam(inputExamCode.value);
   });
 
-  btnStartExam.addEventListener('click', () => {
-    if (state.activeExam) {
+  btnStartExam.addEventListener('click', async () => {
+    if (!state.activeExam || !state.activeExam.id) {
+      alert('Please look up a valid published exam first.');
+      return;
+    }
+
+    btnStartExam.disabled = true;
+    const originalText = btnStartExam.innerHTML;
+    btnStartExam.innerHTML = '<span>Initializing Secure Session...</span>';
+
+    try {
+      // POST /api/exams/:id/start
+      const res = await fetch(`/api/exams/${state.activeExam.id}/start`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${state.token}`
+        }
+      });
+      const result = await res.json();
+
+      if (!res.ok || !result.success) {
+        alert(result.error?.message || 'Unable to start examination session.');
+        return;
+      }
+
+      const session = result.data;
+      state.submissionId = session.submissionId;
+      state.activeExam = {
+        ...state.activeExam,
+        id: session.examId,
+        title: session.examTitle,
+        batch: session.batch,
+        questions: session.questions,
+        remainingSeconds: session.remainingSeconds,
+        deadlineAt: session.deadlineAt,
+        serverTime: session.serverTime
+      };
+
+      // Restore any previous answers if resuming session
+      state.userAnswers = {};
+      if (session.savedAnswers && typeof session.savedAnswers === 'object') {
+        session.questions.forEach((q, idx) => {
+          if (session.savedAnswers[q.id]) {
+            const optIdx = q.options.findIndex(o => o.id === session.savedAnswers[q.id]);
+            if (optIdx !== -1) {
+              state.userAnswers[idx] = optIdx;
+            }
+          }
+        });
+      }
+
       startLiveExamRunner(state.activeExam);
+    } catch (err) {
+      alert('Error connecting to assessment engine: ' + err.message);
+    } finally {
+      btnStartExam.disabled = false;
+      btnStartExam.innerHTML = originalText;
     }
   });
 
@@ -510,27 +592,30 @@ document.addEventListener('DOMContentLoaded', () => {
   function startLiveExamRunner(exam) {
     state.activeExam = exam;
     state.currentQuestionIndex = 0;
-    state.userAnswers = {};
     state.strikeCount = 0;
+
+    const questionsList = exam.questions || [];
 
     // Header population
     runnerExamTitle.textContent = exam.title;
-    runnerSessionCode.textContent = `Active Session: ${exam.code} • High-Security Sandbox`;
-    runnerStudentName.textContent = state.currentUser ? state.currentUser.name : 'Elena Rostova';
-    runnerStudentId.textContent = state.currentUser ? `ID: ${state.currentUser.identifier}` : 'ID: ST-94821';
-    runnerTotalQBadge.textContent = `${exam.questions.length} Questions`;
+    runnerSessionCode.textContent = `Active Session: ${exam.code || 'EXAM'} • Server Time Synchronized`;
+    runnerStudentName.textContent = state.currentUser ? (state.currentUser.fullName || state.currentUser.name) : 'Elena Rostova';
+    runnerStudentId.textContent = state.currentUser ? `ID: ${state.currentUser.studentId || state.currentUser.identifier}` : 'ID: ST-94821';
+    runnerTotalQBadge.textContent = `${questionsList.length} Questions`;
 
     // Render Question Selector Matrix
-    buildQuestionGrid(exam.questions.length);
+    buildQuestionGrid(questionsList.length);
 
     // Render Question 0
     renderQuestion(0);
     updateSummaryStats();
 
-    // Initialize Timer
-    state.remainingSeconds = exam.duration * 60;
-    initTimerCountdown();
+    // Initialize Timer with server-authoritative remainingSeconds
+    state.remainingSeconds = exam.remainingSeconds !== undefined
+      ? parseInt(exam.remainingSeconds, 10)
+      : (parseInt(exam.duration || exam.durationMinutes || 45, 10) * 60);
 
+    initTimerCountdown();
     showScreen('screen-runner');
   }
 
@@ -589,18 +674,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function renderQuestion(index) {
     state.currentQuestionIndex = index;
-    const q = state.activeExam.questions[index];
-    const total = state.activeExam.questions.length;
+    const questionsList = state.activeExam.questions || [];
+    const q = questionsList[index];
+    const total = questionsList.length;
+
+    if (!q) return;
 
     runnerQuestionHeading.textContent = `Question ${index + 1} of ${total}`;
-    runnerQuestionPrompt.textContent = q.prompt;
+    runnerQuestionPrompt.textContent = q.prompt || q.questionText || '';
 
     // Render Options
     runnerOptionsContainer.innerHTML = '';
-    const letters = ['A', 'B', 'C', 'D'];
+    const letters = ['A', 'B', 'C', 'D', 'E', 'F'];
+    const options = q.options || [];
 
-    q.options.forEach((optText, optIdx) => {
+    options.forEach((opt, optIdx) => {
+      const optText = typeof opt === 'string' ? opt : (opt.text || opt.optionText || '');
+      const optId = typeof opt === 'object' && opt.id ? opt.id : optIdx;
       const isSelected = state.userAnswers[index] === optIdx;
+
       const label = document.createElement('label');
       label.className = `option-block ${isSelected ? 'selected' : ''}`;
       label.innerHTML = `
@@ -608,10 +700,10 @@ document.addEventListener('DOMContentLoaded', () => {
           type="radio" 
           name="active_question_opt" 
           class="option-radio" 
-          value="${optIdx}" 
+          value="${optId}" 
           ${isSelected ? 'checked' : ''}
         >
-        <span class="option-identifier">${letters[optIdx]}.</span>
+        <span class="option-identifier">${letters[optIdx] || optIdx + 1}.</span>
         <span class="option-text">${optText}</span>
       `;
 
@@ -650,12 +742,15 @@ document.addEventListener('DOMContentLoaded', () => {
     state.userAnswers[qIndex] = optIndex;
     renderQuestion(qIndex);
     updateSummaryStats();
+    debounceSaveAnswer(qIndex, optIndex);
   }
 
   btnClearSelection.addEventListener('click', () => {
-    delete state.userAnswers[state.currentQuestionIndex];
-    renderQuestion(state.currentQuestionIndex);
+    const idx = state.currentQuestionIndex;
+    delete state.userAnswers[idx];
+    renderQuestion(idx);
     updateSummaryStats();
+    debounceSaveAnswer(idx, null);
   });
 
   btnPrevQuestion.addEventListener('click', () => {
@@ -681,61 +776,162 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   /* --------------------------------------------------------------------------
-     7. Auto-Submission & Manual Submission Engine
+     7. Answer Save Debounce (network persistence layer)
      -------------------------------------------------------------------------- */
-  function submitExam(isAuto = false) {
+  const _answerSaveQueue = {};
+
+  function showAnswerSaveError(msg) {
+    let toast = document.getElementById('answerSaveToast');
+    if (!toast) {
+      toast = document.createElement('div');
+      toast.id = 'answerSaveToast';
+      toast.style.cssText = 'position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#b91c1c;color:#fff;padding:8px 18px;border-radius:8px;font-size:13px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,.3)';
+      document.body.appendChild(toast);
+    }
+    toast.textContent = msg;
+    toast.style.display = 'block';
+  }
+
+  function clearAnswerSaveError() {
+    const toast = document.getElementById('answerSaveToast');
+    if (toast) toast.style.display = 'none';
+  }
+
+  function debounceSaveAnswer(questionIndex, optionIndex) {
+    clearTimeout(_answerSaveQueue[questionIndex]);
+    _answerSaveQueue[questionIndex] = setTimeout(() => {
+      saveAnswerToServer(questionIndex, optionIndex);
+    }, 500);
+  }
+
+  async function saveAnswerToServer(questionIndex, selectedOptionIndex) {
+    if (!state.submissionId || !state.token) return;
+    const q = state.activeExam && state.activeExam.questions && state.activeExam.questions[questionIndex];
+    if (!q) return;
+
+    const selectedOptionId = (selectedOptionIndex !== undefined && selectedOptionIndex !== null)
+      ? (q.options[selectedOptionIndex]?.id || null)
+      : null;
+
+    try {
+      const res = await fetch(`/api/submissions/${state.submissionId}/answers/${q.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${state.token}`
+        },
+        body: JSON.stringify({ selectedOptionId })
+      });
+
+      if (!res.ok) {
+        const r = await res.json().catch(() => ({}));
+        const code = r.error?.code;
+        if (code === 'EXAM_TIME_EXPIRED' || code === 'SUBMISSION_CLOSED') {
+          // Server already finalized — stop timer and show result
+          clearInterval(state.timerInterval);
+          showAnswerSaveError('Exam time expired — submission recorded by server.');
+        } else {
+          showAnswerSaveError(r.error?.message || 'Answer not saved — check connection');
+        }
+      } else {
+        clearAnswerSaveError();
+        // Update localStorage answer cache
+        try {
+          const cacheKey = `ep_answers_${state.submissionId}`;
+          const cache = JSON.parse(localStorage.getItem(cacheKey) || '{}');
+          if (selectedOptionId) cache[q.id] = selectedOptionId;
+          else delete cache[q.id];
+          localStorage.setItem(cacheKey, JSON.stringify(cache));
+        } catch (_) {}
+      }
+    } catch (_err) {
+      showAnswerSaveError('Offline — answer may not be saved, will retry on next selection');
+    }
+  }
+
+  /* --------------------------------------------------------------------------
+     8. Auto-Submission & Manual Submission Engine
+     -------------------------------------------------------------------------- */
+  async function submitExam(isAuto = false, reason = null) {
     clearInterval(state.timerInterval);
 
-    // Compute score
-    let score = 0;
-    let correctCount = 0;
-    const questions = state.activeExam.questions;
+    if (!state.submissionId || !state.token) {
+      // No active server session — fall back to local display only
+      _showLocalResult(isAuto);
+      return;
+    }
 
-    questions.forEach((q, idx) => {
-      if (state.userAnswers[idx] === q.correctIndex) {
-        score += 2;
-        correctCount++;
-      } else if (state.userAnswers[idx] !== undefined) {
-        score = Math.max(0, score - 0.5); // Negative marking
-      }
-    });
-
-    const maxScore = questions.length * 2;
-    const answeredCount = Object.keys(state.userAnswers).length;
-
-    // Increment submissions count on active exam
-    state.activeExam.submissions++;
-
-    // Populate Results Modal
-    const resultSummaryBox = document.getElementById('resultSummaryBox');
     const resultModalDesc = document.getElementById('resultModalDesc');
-
     if (isAuto) {
-      resultModalDesc.textContent = 'Time limit reached (00:00:00). Your answers were automatically finalized and recorded by the server.';
+      resultModalDesc.textContent = 'Time limit reached. Your answers were automatically finalized and recorded by the server.';
     } else {
       resultModalDesc.textContent = 'Your exam was finalized and safely submitted to the assessment engine.';
     }
 
-    resultSummaryBox.innerHTML = `
-      <strong>Exam:</strong> ${state.activeExam.title}<br>
-      <strong>Candidate:</strong> ${state.currentUser.name} (${state.currentUser.identifier})<br>
-      <strong>Questions Attempted:</strong> ${answeredCount} of ${questions.length}<br>
-      <strong>Calculated Score:</strong> ${score.toFixed(2)} / ${maxScore.toFixed(2)} pts (${correctCount} correct)<br>
-      <strong>Security Audit:</strong> ${state.strikeCount} proctoring strikes recorded
-    `;
+    try {
+      const finalReason = isAuto ? 'AUTO_SUBMITTED' : (reason || 'MANUAL');
+      const res = await fetch(`/api/submissions/${state.submissionId}/submit`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${state.token}`
+        },
+        body: JSON.stringify({ reason: finalReason })
+      });
+
+      const result = await res.json().catch(() => ({}));
+
+      if (res.ok && result.success) {
+        const d = result.data;
+        const resultSummaryBox = document.getElementById('resultSummaryBox');
+        resultSummaryBox.innerHTML = `
+          <strong>Exam:</strong> ${state.activeExam?.title || ''}<br>
+          <strong>Candidate:</strong> ${state.currentUser?.fullName || state.currentUser?.name || ''} (${state.currentUser?.studentId || state.currentUser?.identifier || ''})<br>
+          <strong>Questions Attempted:</strong> ${d.answeredCount} of ${d.totalQuestions}<br>
+          <strong>Calculated Score:</strong> ${d.totalScore} pts — ${parseFloat(d.percentage).toFixed(1)}% ${d.passed ? '<span style="color:var(--success,#16a34a)">✓ PASSED</span>' : '<span style="color:#b91c1c">✗ NOT PASSED</span>'}<br>
+          <strong>Security Audit:</strong> ${state.strikeCount} proctoring strikes recorded
+        `;
+      } else {
+        // Server error — show what we know
+        _showLocalResult(isAuto);
+        console.warn('Submit API error:', result);
+      }
+    } catch (err) {
+      _showLocalResult(isAuto);
+      console.warn('Submit network error:', err);
+    }
+
+    // Clear localStorage answer cache
+    try {
+      if (state.submissionId) localStorage.removeItem(`ep_answers_${state.submissionId}`);
+    } catch (_) {}
 
     document.getElementById('submitResultModal').classList.add('active');
   }
 
+  /** Fallback local result display when server is unreachable. */
+  function _showLocalResult(isAuto) {
+    const resultSummaryBox = document.getElementById('resultSummaryBox');
+    const answeredCount = Object.keys(state.userAnswers).length;
+    const total = (state.activeExam?.questions || []).length;
+    resultSummaryBox.innerHTML = `
+      <strong>Exam:</strong> ${state.activeExam?.title || ''}<br>
+      <strong>Candidate:</strong> ${state.currentUser?.fullName || state.currentUser?.name || ''} (${state.currentUser?.studentId || state.currentUser?.identifier || ''})<br>
+      <strong>Questions Attempted:</strong> ${answeredCount} of ${total}<br>
+      <strong>Score:</strong> Calculated by server (result pending connection)<br>
+      <strong>Security Audit:</strong> ${state.strikeCount} proctoring strikes recorded
+    `;
+  }
+
   function handleAutoSubmit() {
-    submitExam(true);
+    submitExam(true, 'AUTO_SUBMITTED');
   }
 
   btnRunnerHeaderSubmit.addEventListener('click', () => {
     const answeredCount = Object.keys(state.userAnswers).length;
     const total = state.activeExam.questions.length;
-    if (confirm(`You have answered ${answeredCount} of ${total} questions. Do you wish to finalize and submit?`)) {
-      submitExam(false);
+    if (confirm(`You have answered ${answeredCount} of ${total} questions. Finalize and submit?`)) {
+      submitExam(false, 'MANUAL');
     }
   });
 
@@ -743,6 +939,15 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('submitResultModal').classList.remove('active');
     preExamDetailsCard.classList.remove('active');
     inputExamCode.value = '';
+    // Clear active session state
+    state.submissionId = null;
+    state.activeExam = null;
+    state.userAnswers = {};
+    state.strikeCount = 0;
+    try {
+      if (state.submissionId) localStorage.removeItem(`ep_answers_${state.submissionId}`);
+    } catch (_) {}
+    clearAnswerSaveError();
     showScreen('screen-student-dash');
   });
 
@@ -778,10 +983,19 @@ document.addEventListener('DOMContentLoaded', () => {
     warningStrikeNum.textContent = state.strikeCount;
     tabWarningModal.classList.add('active');
 
+    // Record telemetry on the server (fire-and-forget)
+    if (state.submissionId && state.token) {
+      fetch(`/api/submissions/${state.submissionId}/integrity-event`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${state.token}` },
+        body: JSON.stringify({ eventType: 'TAB_SWITCH', eventData: { strikeCount: state.strikeCount, timestamp: new Date().toISOString() } })
+      }).catch(() => {});
+    }
+
     if (state.strikeCount >= 3) {
       alert('Disqualification Notice: 3 integrity strikes exceeded. Your exam will be immediately submitted.');
       tabWarningModal.classList.remove('active');
-      submitExam(true);
+      submitExam(true, 'FORCE_SUBMITTED');
     }
   }
 
