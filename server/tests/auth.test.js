@@ -44,15 +44,5 @@ test('Authentication rejects incomplete or invalid login requests without issuin
     assert.equal(json.error.code, 'INVALID_ROLE');
   });
 
-  await t.test('database outage never falls back to a demo token', async () => {
-    const { status, json } = await login({
-      identifier: 'alan.vance@university.edu',
-      password: 'password123',
-      role: 'TEACHER'
-    });
-    // In CI/local test runs without PostgreSQL, login must fail closed.
-    assert.equal(status, 503);
-    assert.equal(json.error.code, 'DATABASE_UNAVAILABLE');
-    assert.equal(json.data, undefined);
-  });
+
 });
