@@ -23,7 +23,10 @@ function Read-SecretValue([string]$Prompt) {
 }
 
 function Escape-DotEnv([string]$Value) {
-    return '"' + $Value.Replace('\', '\\').Replace('"', '\"').Replace("`r", '').Replace("`n", '\n') + '"'
+    if ($Value.Contains('\') -or $Value.Contains('"') -or $Value.Contains("`r") -or $Value.Contains("`n")) {
+        throw 'For this setup script, .env values cannot contain backslashes, double quotes, or line breaks. Use another password/value and rerun.'
+    }
+    return '"' + $Value + '"'
 }
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
