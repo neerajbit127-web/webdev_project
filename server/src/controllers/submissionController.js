@@ -6,6 +6,26 @@ import { sanitizeQuestionsForStudent } from './studentExamController.js';
    Internal helpers
    ───────────────────────────────────────────────────────────────────────────── */
 
+/**
+ * Acquires a PostgreSQL client and converts connection failures into a stable
+ * API response instead of an unhandled async rejection (Express 4).
+ */
+async function connectOrRespond(res) {
+  try {
+    return await pool.connect();
+  } catch (error) {
+    if (error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT') {
+      sendError(res, {
+        statusCode: 503,
+        code: 'DATABASE_UNAVAILABLE',
+        message: 'Database connection unavailable.'
+      });
+      return null;
+    }
+    throw error;
+  }
+}
+
 /** Verify ownership and return the submission row, or send an error. */
 async function fetchOwnedSubmission(client, submissionId, currentUserId, isAdmin) {
   const { rows } = await client.query(
@@ -133,7 +153,8 @@ export async function getSubmissionState(req, res) {
   const currentUserId = req.user.id;
   const isAdmin = req.user.role === 'ADMIN';
 
-  const client = await pool.connect();
+  const client = await connectOrRespond(res);
+  if (!client) return;
   try {
     const sub = await fetchOwnedSubmission(client, submissionId, currentUserId, isAdmin);
 
@@ -248,7 +269,8 @@ export async function putAnswer(req, res) {
   // Only accept selectedOptionId — ignore any other client-sent fields
   const { selectedOptionId = null } = req.body;
 
-  const client = await pool.connect();
+  const client = await connectOrRespond(res);
+  if (!client) return;
   try {
     // Fetch submission with ownership check
     const sub = await fetchOwnedSubmission(client, submissionId, currentUserId, isAdmin);
@@ -350,7 +372,8 @@ export async function submitExamHandler(req, res) {
   const { reason } = req.body || {};
   const forceStatus = reason === 'FORCE_SUBMITTED' ? 'FORCE_SUBMITTED' : null;
 
-  const client = await pool.connect();
+  const client = await connectOrRespond(res);
+  if (!client) return;
   try {
     await client.query('BEGIN');
 
@@ -364,7 +387,7 @@ export async function submitExamHandler(req, res) {
          FROM submissions s
          JOIN exams e ON e.id = s.exam_id
         WHERE s.id = $1
-        FOR UPDATE LIMIT 1;`,
+        LIMIT 1 FOR UPDATE;`,
       [submissionId]
     );
 
@@ -411,8 +434,9 @@ export async function submitExamHandler(req, res) {
       });
     }
 
-    // Score and finalize
-    const finalStatus = forceStatus || 'SUBMITTED';
+    // The database deadline is authoritative even if the client submits late.
+    const isPastDeadline = Number(sub.remaining_seconds ?? 0) <= 0;
+    const finalStatus = isPastDeadline ? 'AUTO_SUBMITTED' : (forceStatus || 'SUBMITTED');
     const scores = await scoreAndFinalise(client, sub, finalStatus);
     await client.query('COMMIT');
 
@@ -466,7 +490,8 @@ export async function recordIntegrityEvent(req, res) {
     return sendError(res, { statusCode: 400, code: 'MISSING_EVENT_TYPE', message: 'eventType is required.' });
   }
 
-  const client = await pool.connect();
+  const client = await connectOrRespond(res);
+  if (!client) return;
   try {
     // Verify ownership without locking
     const { rows } = await client.query(

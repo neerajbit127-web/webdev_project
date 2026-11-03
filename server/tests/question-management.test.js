@@ -34,6 +34,7 @@ test('Question Management Suite for Teacher Exam Drafts', async (t) => {
   });
 
   t.after(async () => {
+    server.closeAllConnections();
     await new Promise((resolve) => server.close(resolve));
     await closePool();
   });

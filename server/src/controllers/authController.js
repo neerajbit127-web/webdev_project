@@ -3,113 +3,101 @@ import { pool } from '../config/database.js';
 import { generateToken } from '../utils/token.js';
 import { sendSuccess, sendError } from '../utils/response.js';
 
-// Deterministic UUIDs for demo users in case DB has not been seeded
-const DEMO_TEACHER = {
-  id: '00000000-0000-4000-a000-000000000001',
-  fullName: 'Dr. Alan Vance',
-  email: 'alan.vance@university.edu',
-  role: 'TEACHER',
-  studentId: null
-};
-
-const DEMO_STUDENT = {
-  id: '00000000-0000-4000-a000-000000000002',
-  fullName: 'Elena Rostova',
-  email: 'elena.rostova@university.edu',
-  role: 'STUDENT',
-  studentId: 'ST-94821'
-};
+const ALLOWED_ROLES = new Set(['STUDENT', 'TEACHER', 'ADMIN']);
 
 /**
  * POST /api/auth/login
+ *
+ * Authentication always requires a provisioned database account and a valid
+ * password. There is deliberately no demo/offline fallback: issuing a token
+ * when PostgreSQL is unavailable would bypass authentication.
  */
 export async function login(req, res) {
-  const { identifier, password, role = 'TEACHER' } = req.body;
+  const identifier = typeof req.body?.identifier === 'string'
+    ? req.body.identifier.trim()
+    : '';
+  const password = typeof req.body?.password === 'string'
+    ? req.body.password
+    : '';
+  const role = typeof req.body?.role === 'string'
+    ? req.body.role.trim().toUpperCase()
+    : '';
 
-  if (!identifier) {
+  if (!identifier || !password || !role) {
     return sendError(res, {
       statusCode: 400,
       code: 'VALIDATION_ERROR',
-      message: 'Username, institutional email, or Student ID is required.'
+      message: 'Identifier, password, and role are required.'
     });
   }
 
-  const cleanRole = (role || 'TEACHER').toUpperCase();
-  const cleanIdentifier = identifier.trim();
+  if (!ALLOWED_ROLES.has(role)) {
+    return sendError(res, {
+      statusCode: 400,
+      code: 'INVALID_ROLE',
+      message: 'The requested account role is invalid.'
+    });
+  }
 
+  let user;
   try {
-    // Attempt database lookup
     const { rows } = await pool.query(
       `SELECT id, full_name, email, student_id, password_hash, role, is_active
-       FROM users 
-       WHERE (LOWER(email) = LOWER($1) OR student_id = $1)
-       LIMIT 1;`,
-      [cleanIdentifier]
+         FROM users
+        WHERE LOWER(email) = LOWER($1)
+           OR (student_id IS NOT NULL AND LOWER(student_id) = LOWER($1))
+        ORDER BY CASE WHEN LOWER(email) = LOWER($1) THEN 0 ELSE 1 END
+        LIMIT 1;`,
+      [identifier]
     );
-
-    if (rows.length > 0) {
-      const user = rows[0];
-
-      if (!user.is_active) {
-        return sendError(res, {
-          statusCode: 403,
-          code: 'ACCOUNT_DEACTIVATED',
-          message: 'Your account has been deactivated. Please contact your administrator.'
-        });
-      }
-
-      // Password verification
-      if (password && user.password_hash) {
-        const isMatch = await bcrypt.compare(password, user.password_hash);
-        if (!isMatch) {
-          return sendError(res, {
-            statusCode: 401,
-            code: 'INVALID_CREDENTIALS',
-            message: 'Invalid security credentials provided.'
-          });
-        }
-      }
-
-      const tokenPayload = {
-        id: user.id,
-        email: user.email,
-        fullName: user.full_name,
-        role: user.role,
-        studentId: user.student_id
-      };
-
-      const token = generateToken(tokenPayload);
-
-      return sendSuccess(res, {
-        message: 'Authentication successful',
-        data: {
-          token,
-          user: tokenPayload
-        }
-      });
-    }
-  } catch (dbErr) {
-    // Database is unavailable or tables not created yet - fall back gracefully for demo credentials
+    user = rows[0];
+  } catch (error) {
+    // Never fall back to demo credentials when the database is down or broken.
+    console.error('[AUTH] Database lookup failed:', error.message);
+    return sendError(res, {
+      statusCode: 503,
+      code: 'DATABASE_UNAVAILABLE',
+      message: 'Authentication is temporarily unavailable. Please try again later.'
+    });
   }
 
-  // Graceful fallback for standard demo accounts if DB is offline or empty
-  let userPayload;
-  if (cleanRole === 'TEACHER') {
-    userPayload = {
-      ...DEMO_TEACHER,
-      email: cleanIdentifier.includes('@') ? cleanIdentifier : DEMO_TEACHER.email
-    };
-  } else {
-    userPayload = {
-      ...DEMO_STUDENT,
-      studentId: cleanIdentifier || DEMO_STUDENT.studentId
-    };
+  // Use one generic response for unknown users, wrong roles, disabled accounts,
+  // and incorrect passwords to avoid disclosing account details.
+  if (!user || user.role !== role || !user.is_active || !user.password_hash) {
+    return sendError(res, {
+      statusCode: 401,
+      code: 'INVALID_CREDENTIALS',
+      message: 'Invalid identifier, password, or account role.'
+    });
   }
+
+  let passwordMatches = false;
+  try {
+    passwordMatches = await bcrypt.compare(password, user.password_hash);
+  } catch (error) {
+    console.error('[AUTH] Password verification failed:', error.message);
+  }
+
+  if (!passwordMatches) {
+    return sendError(res, {
+      statusCode: 401,
+      code: 'INVALID_CREDENTIALS',
+      message: 'Invalid identifier, password, or account role.'
+    });
+  }
+
+  const userPayload = {
+    id: user.id,
+    email: user.email,
+    fullName: user.full_name,
+    role: user.role,
+    studentId: user.student_id
+  };
 
   const token = generateToken(userPayload);
 
   return sendSuccess(res, {
-    message: 'Authenticated successfully (Demo Mode)',
+    message: 'Authentication successful',
     data: {
       token,
       user: userPayload
@@ -127,8 +115,4 @@ export async function getMe(req, res) {
   });
 }
 
-export default {
-  login,
-  getMe
-};
-
+export default { login, getMe };
