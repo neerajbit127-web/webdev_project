@@ -13,9 +13,9 @@ services:
     env: node
     plan: starter
     region: oregon
-    buildCommand: npm install && npm run migrate
-    startCommand: npm start
-    healthCheckPath: /health
+    buildCommand: npm --prefix server install && npm --prefix server run migrate
+    startCommand: npm --prefix server start
+    healthCheckPath: /api/health
     autoDeploy: true
     envVars:
       - key: NODE_ENV
@@ -26,10 +26,6 @@ services:
         generateValue: true
       - key: JWT_EXPIRES_IN
         value: 24h
-      - key: RATE_LIMIT_MAX
-        value: 500
-      - key: DB_SSL
-        value: "true"
       # Wire DATABASE_URL directly from the PostgreSQL instance below
       - key: DATABASE_URL
         fromDatabase:
