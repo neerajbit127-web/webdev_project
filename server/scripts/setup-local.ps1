@@ -8,7 +8,7 @@ function Read-RequiredValue([string]$Prompt) {
     }
 }
 
-function Read-SecretValue([string]$Prompt) {
+function Read-SecretValue([string]$Prompt, [int]$MinimumLength = 12) {
     while ($true) {
         $secure = Read-Host $Prompt -AsSecureString
         $ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
@@ -17,8 +17,8 @@ function Read-SecretValue([string]$Prompt) {
         } finally {
             [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr)
         }
-        if ($value.Length -ge 12) { return $value }
-        Write-Host 'Use at least 12 characters.' -ForegroundColor Yellow
+        if ($value.Length -ge $MinimumLength) { return $value }
+        Write-Host "Use at least $MinimumLength characters." -ForegroundColor Yellow
     }
 }
 
@@ -67,7 +67,7 @@ $dbName = Read-Host 'Database name [exam_portal_db]'
 if ([string]::IsNullOrWhiteSpace($dbName)) { $dbName = 'exam_portal_db' }
 $dbUser = Read-Host 'PostgreSQL user [postgres]'
 if ([string]::IsNullOrWhiteSpace($dbUser)) { $dbUser = 'postgres' }
-$dbPassword = Read-SecretValue 'PostgreSQL password (12+ characters recommended; input hidden)'
+$dbPassword = Read-SecretValue 'PostgreSQL password (input hidden)' 1
 
 $teacherName = Read-RequiredValue 'Teacher full name'
 $teacherEmail = Read-RequiredValue 'Teacher email'
