@@ -10,7 +10,8 @@ document.addEventListener('DOMContentLoaded', () => {
      -------------------------------------------------------------------------- */
   const state = {
     token: localStorage.getItem('examportal_token') || null,
-    currentRole: 'TEACHER', // 'TEACHER' | 'STUDENT'
+    currentRole: 'TEACHER',
+    pendingExamCode: null, // 'TEACHER' | 'STUDENT'
     currentUser: null,
     activeExam: null,
     currentQuestionIndex: 0,
@@ -39,10 +40,17 @@ document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.logout-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       clearInterval(state.timerInterval);
+      state.token = null;
+      state.currentUser = null;
+      state.currentRole = 'TEACHER';
+      state.pendingExamCode = null;
       state.activeExam = null;
+      state.submissionId = null;
       state.userAnswers = {};
       state.strikeCount = 0;
+      localStorage.removeItem('examportal_token');
       showScreen('screen-auth');
+      setRole('TEACHER');
     });
   });
 
@@ -117,9 +125,16 @@ document.addEventListener('DOMContentLoaded', () => {
         await fetchTeacherExams();
         showScreen('screen-teacher');
       } else {
-        document.getElementById('studentDisplayName').textContent = state.currentUser.fullName || state.currentUser.name || 'Elena Rostova';
-        document.getElementById('studentDisplayId').textContent = `Student ID: ${state.currentUser.studentId || state.currentUser.identifier || 'ST-94821'}`;
+        document.getElementById('studentDisplayName').textContent = state.currentUser.fullName || state.currentUser.name || 'Student';
+        document.getElementById('studentDisplayId').textContent = `Student ID: ${state.currentUser.studentId || state.currentUser.identifier || ''}`;
         showScreen('screen-student-dash');
+
+        if (state.pendingExamCode) {
+          const pendingCode = state.pendingExamCode;
+          state.pendingExamCode = null;
+          document.getElementById('inputExamCode').value = pendingCode;
+          await findAndDisplayExam(pendingCode);
+        }
       }
     } catch (err) {
       alert('Connection error communicating with assessment backend.');
@@ -405,31 +420,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   btnJumpToStudentTest.addEventListener('click', async () => {
-    const code = displayGeneratedCode.textContent;
-
-    // Authenticate as demo student if currently on teacher profile
-    if (!state.currentUser || state.currentUser.role !== 'STUDENT') {
-      try {
-        const res = await fetch('/api/auth/login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ identifier: 'ST-94821', password: 'password123', role: 'STUDENT' })
-        });
-        const result = await res.json();
-        if (res.ok && result.success) {
-          state.token = result.data.token;
-          state.currentUser = result.data.user;
-          localStorage.setItem('examportal_token', state.token);
-        }
-      } catch (_) {}
-    }
-
-    state.currentRole = 'STUDENT';
-    document.getElementById('studentDisplayName').textContent = state.currentUser ? (state.currentUser.fullName || state.currentUser.name) : 'Elena Rostova';
-    document.getElementById('studentDisplayId').textContent = `Student ID: ${state.currentUser ? (state.currentUser.studentId || state.currentUser.identifier) : 'ST-94821'}`;
-    document.getElementById('inputExamCode').value = code;
-    showScreen('screen-student-dash');
-    await findAndDisplayExam(code);
+    await beginStudentTest(displayGeneratedCode.textContent.trim());
   });
 
   /* --------------------------------------------------------------------------
@@ -451,21 +442,25 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnFind = document.getElementById('btnFindExam');
     if (btnFind) btnFind.disabled = true;
 
-    // Ensure student is authenticated before lookup
-    if (!state.token || !state.currentUser || state.currentUser.role !== 'STUDENT') {
+    // Restore the user associated with a persisted token after a page refresh.
+    if (state.token && !state.currentUser) {
       try {
-        const res = await fetch('/api/auth/login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ identifier: 'ST-94821', password: 'password123', role: 'STUDENT' })
+        const meResponse = await fetch('/api/auth/me', {
+          headers: { 'Authorization': `Bearer ${state.token}` }
         });
-        const result = await res.json();
-        if (res.ok && result.success) {
-          state.token = result.data.token;
-          state.currentUser = result.data.user;
-          localStorage.setItem('examportal_token', state.token);
+        const meResult = await meResponse.json();
+        if (meResponse.ok && meResult.success) {
+          state.currentUser = meResult.data;
         }
       } catch (_) {}
+    }
+
+    if (!state.token || !state.currentUser || state.currentUser.role !== 'STUDENT') {
+      state.pendingExamCode = cleanCode;
+      setRole('STUDENT');
+      showScreen('screen-auth');
+      alert('Please sign in with your student account to access this examination.');
+      return;
     }
 
     try {
@@ -779,6 +774,7 @@ document.addEventListener('DOMContentLoaded', () => {
      7. Answer Save Debounce (network persistence layer)
      -------------------------------------------------------------------------- */
   const _answerSaveQueue = {};
+  const _pendingAnswerValues = {};
 
   function showAnswerSaveError(msg) {
     let toast = document.getElementById('answerSaveToast');
@@ -799,7 +795,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function debounceSaveAnswer(questionIndex, optionIndex) {
     clearTimeout(_answerSaveQueue[questionIndex]);
+    _pendingAnswerValues[questionIndex] = optionIndex;
     _answerSaveQueue[questionIndex] = setTimeout(() => {
+      delete _answerSaveQueue[questionIndex];
+      delete _pendingAnswerValues[questionIndex];
       saveAnswerToServer(questionIndex, optionIndex);
     }, 500);
   }
@@ -869,6 +868,17 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     try {
+      // Flush debounced answer writes before finalizing so the last selection
+      // cannot be lost when the student submits immediately.
+      const pendingWrites = Object.entries(_pendingAnswerValues).map(([index, optionIndex]) => {
+        const questionIndex = Number(index);
+        clearTimeout(_answerSaveQueue[questionIndex]);
+        delete _answerSaveQueue[questionIndex];
+        delete _pendingAnswerValues[questionIndex];
+        return saveAnswerToServer(questionIndex, optionIndex);
+      });
+      await Promise.allSettled(pendingWrites);
+
       const finalReason = isAuto ? 'AUTO_SUBMITTED' : (reason || 'MANUAL');
       const res = await fetch(`/api/submissions/${state.submissionId}/submit`, {
         method: 'POST',
@@ -892,11 +902,13 @@ document.addEventListener('DOMContentLoaded', () => {
           <strong>Security Audit:</strong> ${state.strikeCount} proctoring strikes recorded
         `;
       } else {
-        // Server error — show what we know
+        // Do not imply that the server recorded a submission when it did not.
+        resultModalDesc.textContent = 'The server could not confirm your submission. Your answers may still be saved, but the result is not verified. Reconnect and retry submission.';
         _showLocalResult(isAuto);
         console.warn('Submit API error:', result);
       }
     } catch (err) {
+      resultModalDesc.textContent = 'The server could not be reached to confirm your submission. Your result is not verified. Reconnect and retry submission.';
       _showLocalResult(isAuto);
       console.warn('Submit network error:', err);
     }
@@ -939,14 +951,17 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('submitResultModal').classList.remove('active');
     preExamDetailsCard.classList.remove('active');
     inputExamCode.value = '';
-    // Clear active session state
+    // Clear the cached answers before clearing the submission identifier.
+    try {
+      if (state.submissionId) localStorage.removeItem(`ep_answers_${state.submissionId}`);
+    } catch (_) {}
+    Object.values(_answerSaveQueue).forEach(clearTimeout);
+    Object.keys(_answerSaveQueue).forEach(key => delete _answerSaveQueue[key]);
+    Object.keys(_pendingAnswerValues).forEach(key => delete _pendingAnswerValues[key]);
     state.submissionId = null;
     state.activeExam = null;
     state.userAnswers = {};
     state.strikeCount = 0;
-    try {
-      if (state.submissionId) localStorage.removeItem(`ep_answers_${state.submissionId}`);
-    } catch (_) {}
     clearAnswerSaveError();
     showScreen('screen-student-dash');
   });
@@ -1030,17 +1045,36 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   };
 
+  async function beginStudentTest(code) {
+    const cleanCode = String(code || '').trim().toUpperCase();
+    if (!cleanCode) {
+      alert('No examination access code is available.');
+      return;
+    }
+
+    // A teacher token must never be reused as a student session.
+    if (state.currentUser?.role === 'STUDENT' && state.token) {
+      document.getElementById('studentDisplayName').textContent =
+        state.currentUser.fullName || state.currentUser.name || 'Student';
+      document.getElementById('studentDisplayId').textContent =
+        `Student ID: ${state.currentUser.studentId || state.currentUser.identifier || ''}`;
+      document.getElementById('inputExamCode').value = cleanCode;
+      showScreen('screen-student-dash');
+      await findAndDisplayExam(cleanCode);
+      return;
+    }
+
+    state.pendingExamCode = cleanCode;
+    state.token = null;
+    state.currentUser = null;
+    localStorage.removeItem('examportal_token');
+    setRole('STUDENT');
+    showScreen('screen-auth');
+    alert('Sign in with a student account to test this examination. The exam code will be filled in automatically after login.');
+  }
+
   window.testExamDirectly = function(code) {
-    state.currentUser = {
-      role: 'STUDENT',
-      name: 'Elena Rostova',
-      identifier: 'ST-94821'
-    };
-    document.getElementById('studentDisplayName').textContent = state.currentUser.name;
-    document.getElementById('studentDisplayId').textContent = `Student ID: ${state.currentUser.identifier}`;
-    document.getElementById('inputExamCode').value = code;
-    showScreen('screen-student-dash');
-    findAndDisplayExam(code);
+    beginStudentTest(code);
   };
 
 });
