@@ -1,7 +1,7 @@
 {
   "name": "exam-portal-server",
   "version": "1.0.0",
-  "description": "Backend foundation for ExamPortal enterprise examination system",
+  "description": "ExamPortal Express API and PostgreSQL backend",
   "main": "src/server.js",
   "type": "module",
   "scripts": {
@@ -10,16 +10,12 @@
     "migrate": "node scripts/migrate.js",
     "migrate:rollback": "node scripts/migrate.js rollback",
     "migrate:status": "node scripts/migrate.js status",
-    "test": "node --test \"tests/**/*.test.js\""
+    "seed": "node scripts/seed.js",
+    "test": "node --test tests/*.test.js"
   },
-  "keywords": [
-    "exam-portal",
-    "express",
-    "postgresql",
-    "nodejs"
-  ],
-  "author": "",
-  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "dependencies": {
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.5",
