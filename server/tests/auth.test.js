@@ -11,6 +11,7 @@ test('Authentication rejects incomplete or invalid login requests without issuin
   const baseUrl = `http://127.0.0.1:${server.address().port}`;
 
   t.after(async () => {
+    server.closeAllConnections();
     await new Promise((resolve) => server.close(resolve));
     await closePool();
   });
