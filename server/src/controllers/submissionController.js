@@ -585,7 +585,7 @@ export async function getSubmissionReview(req, res) {
 
     const { rows: questions } = await client.query(
       `SELECT q.id, q.question_text, q.question_type, q.marks, q.negative_marks,
-              q.position, q.explanation, sa.selected_option_id, sa.is_correct,
+              q.position, sa.selected_option_id, sa.is_correct,
               sa.awarded_marks
          FROM questions q
          LEFT JOIN submission_answers sa
@@ -625,7 +625,7 @@ export async function getSubmissionReview(req, res) {
           marks: q.marks,
           awardedMarks: q.awarded_marks,
           isCorrect: q.is_correct === true,
-          explanation: q.explanation,
+          explanation: null,
           selectedOptionId: q.selected_option_id,
           options: optionsByQuestion[q.id] || []
         }))
