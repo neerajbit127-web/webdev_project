@@ -11,7 +11,8 @@
     "migrate:rollback": "node scripts/migrate.js rollback",
     "migrate:status": "node scripts/migrate.js status",
     "seed": "node scripts/seed.js",
-    "test": "node --test"
+    "test": "node --test",
+    "admin:create": "node scripts/create-admin.js"
   },
   "engines": {
     "node": ">=18.0.0"
