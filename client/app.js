@@ -57,43 +57,110 @@ document.addEventListener('DOMContentLoaded', () => {
   /* --------------------------------------------------------------------------
      3. Screen 1: Role Selection & Authentication
      -------------------------------------------------------------------------- */
-  const roleBtnTeacher = document.getElementById('roleBtnTeacher');
-  const roleBtnStudent = document.getElementById('roleBtnStudent');
+  const roleButtons = {
+    TEACHER: document.getElementById('roleBtnTeacher'),
+    STUDENT: document.getElementById('roleBtnStudent'),
+    ADMIN: document.getElementById('roleBtnAdmin')
+  };
   const lblIdentifier = document.getElementById('lblIdentifier');
   const loginIdentifier = document.getElementById('loginIdentifier');
   const hintIdentifier = document.getElementById('hintIdentifier');
   const btnAuthSubmit = document.getElementById('btnAuthSubmit');
   const authLoginForm = document.getElementById('authLoginForm');
+  const authRegisterForm = document.getElementById('authRegisterForm');
+  const btnShowRegister = document.getElementById('btnShowRegister');
+  const authSwitchPrompt = document.getElementById('authSwitchPrompt');
+  const authHelpText = document.getElementById('authHelpText');
+  const registerStudentId = document.getElementById('registerStudentId');
+  const registerStudentIdGroup = document.getElementById('registerStudentIdGroup');
+  let authMode = 'login';
 
   function setRole(role) {
     state.currentRole = role;
-    if (role === 'TEACHER') {
-      roleBtnTeacher.classList.add('active');
-      roleBtnTeacher.setAttribute('aria-pressed', 'true');
-      roleBtnStudent.classList.remove('active');
-      roleBtnStudent.setAttribute('aria-pressed', 'false');
+    Object.entries(roleButtons).forEach(([key, button]) => {
+      if (!button) return;
+      const active = key === role;
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-pressed', String(active));
+    });
 
-      lblIdentifier.textContent = 'Username or Institutional Email';
-      hintIdentifier.textContent = 'Authorized faculty email address.';
-      loginIdentifier.value = 'alan.vance@university.edu';
-      loginIdentifier.placeholder = 'e.g. name@university.edu';
-      btnAuthSubmit.textContent = 'Sign In as Teacher';
+    if (role === 'STUDENT') {
+      lblIdentifier.textContent = 'Email or Student ID';
+      hintIdentifier.textContent = 'Use the email or student ID linked to your account.';
+      loginIdentifier.value = '';
+      loginIdentifier.placeholder = 'name@example.com or student ID';
     } else {
-      roleBtnStudent.classList.add('active');
-      roleBtnStudent.setAttribute('aria-pressed', 'true');
-      roleBtnTeacher.classList.remove('active');
-      roleBtnTeacher.setAttribute('aria-pressed', 'false');
-
-      lblIdentifier.textContent = 'Student ID';
-      hintIdentifier.textContent = 'Your official matriculation ID.';
-      loginIdentifier.value = 'ST-94821';
-      loginIdentifier.placeholder = 'e.g. ST-94821';
-      btnAuthSubmit.textContent = 'Sign In as Student';
+      lblIdentifier.textContent = 'Email';
+      hintIdentifier.textContent = role === 'ADMIN'
+        ? 'Administrator accounts are provisioned separately.'
+        : 'Use your registered email address.';
+      loginIdentifier.value = '';
+      loginIdentifier.placeholder = 'name@example.com';
     }
+    btnAuthSubmit.textContent = role === 'ADMIN' ? 'Sign In as Administrator' : `Sign In as ${role === 'TEACHER' ? 'Teacher' : 'Student'}`;
+    btnShowRegister.hidden = role === 'ADMIN';
+    authSwitchPrompt.hidden = role === 'ADMIN';
+    if (authMode === 'register' && role === 'ADMIN') showAuthMode('login');
+    registerStudentIdGroup.hidden = role !== 'STUDENT';
+    registerStudentId.required = role === 'STUDENT';
+    document.getElementById('btnRegisterSubmit').textContent =
+      role === 'TEACHER' ? 'Create Teacher Account' : 'Create Student Account';
   }
 
-  roleBtnTeacher.addEventListener('click', () => setRole('TEACHER'));
-  roleBtnStudent.addEventListener('click', () => setRole('STUDENT'));
+  function showAuthMode(mode) {
+    authMode = mode;
+    const registering = mode === 'register';
+    authLoginForm.hidden = registering;
+    authRegisterForm.hidden = !registering;
+    btnShowRegister.textContent = registering ? 'Sign in instead' : 'Create an account';
+    authSwitchPrompt.textContent = registering ? 'Already registered?' : 'New to ExamPortal?';
+    authHelpText.textContent = registering
+      ? 'Teachers and students can create accounts. Administrator access is managed separately.'
+      : 'Sign in with your registered account. Teachers can register freely.';
+  }
+
+  Object.entries(roleButtons).forEach(([role, button]) => {
+    if (button) button.addEventListener('click', () => setRole(role));
+  });
+  btnShowRegister.addEventListener('click', () => {
+    showAuthMode(authMode === 'register' ? 'login' : 'register');
+  });
+
+  authRegisterForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const submit = document.getElementById('btnRegisterSubmit');
+    const payload = {
+      fullName: document.getElementById('registerFullName').value.trim(),
+      email: document.getElementById('registerEmail').value.trim(),
+      password: document.getElementById('registerPassword').value,
+      role: state.currentRole
+    };
+    if (state.currentRole === 'STUDENT') payload.studentId = registerStudentId.value.trim();
+
+    submit.disabled = true;
+    submit.textContent = 'Creating account...';
+    try {
+      const response = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        alert(result.error?.message || 'Could not create account.');
+        return;
+      }
+      alert('Account created. You can now sign in.');
+      authRegisterForm.reset();
+      loginIdentifier.value = payload.email;
+      showAuthMode('login');
+    } catch (_) {
+      alert('Connection error communicating with the registration service.');
+    } finally {
+      submit.disabled = false;
+      submit.textContent = state.currentRole === 'TEACHER' ? 'Create Teacher Account' : 'Create Student Account';
+    }
+  });
 
   authLoginForm.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -121,12 +188,16 @@ document.addEventListener('DOMContentLoaded', () => {
       localStorage.setItem('examportal_token', state.token);
 
       if (state.currentRole === 'TEACHER') {
-        document.getElementById('teacherDisplayName').textContent = state.currentUser.fullName || state.currentUser.name || 'Dr. Alan Vance';
+        document.getElementById('teacherDisplayName').textContent = state.currentUser.fullName || 'Teacher';
         await fetchTeacherExams();
         showScreen('screen-teacher');
+      } else if (state.currentRole === 'ADMIN') {
+        document.getElementById('adminDisplayName').textContent = state.currentUser.fullName || 'Administrator';
+        await loadAdminDashboard();
+        showScreen('screen-admin');
       } else {
-        document.getElementById('studentDisplayName').textContent = state.currentUser.fullName || state.currentUser.name || 'Student';
-        document.getElementById('studentDisplayId').textContent = `Student ID: ${state.currentUser.studentId || state.currentUser.identifier || ''}`;
+        document.getElementById('studentDisplayName').textContent = state.currentUser.fullName || 'Student';
+        document.getElementById('studentDisplayId').textContent = `Student ID: ${state.currentUser.studentId || ''}`;
         showScreen('screen-student-dash');
 
         if (state.pendingExamCode) {
@@ -1044,6 +1115,53 @@ document.addEventListener('DOMContentLoaded', () => {
       }, 1500);
     });
   };
+
+  async function loadAdminDashboard() {
+    const usersBody = document.getElementById('adminUsersBody');
+    const loginsBody = document.getElementById('adminLoginsBody');
+    usersBody.innerHTML = '<tr><td colspan="6">Loading users...</td></tr>';
+    loginsBody.innerHTML = '<tr><td colspan="5">Loading activity...</td></tr>';
+    try {
+      const headers = { 'Authorization': `Bearer ${state.token}` };
+      const [usersResponse, loginsResponse] = await Promise.all([
+        fetch('/api/auth/users', { headers }),
+        fetch('/api/auth/login-activity?limit=100', { headers })
+      ]);
+      const [usersResult, loginsResult] = await Promise.all([usersResponse.json(), loginsResponse.json()]);
+      if (!usersResponse.ok || !usersResult.success) throw new Error(usersResult.error?.message || 'Unable to load users.');
+      if (!loginsResponse.ok || !loginsResult.success) throw new Error(loginsResult.error?.message || 'Unable to load login history.');
+
+      usersBody.innerHTML = '';
+      usersResult.data.forEach(user => {
+        const row = document.createElement('tr');
+        [user.full_name, user.email, user.student_id || '—', user.role, user.is_active ? 'Active' : 'Disabled',
+          new Date(user.created_at).toLocaleString()].forEach(value => {
+          const cell = document.createElement('td');
+          cell.textContent = value;
+          row.appendChild(cell);
+        });
+        usersBody.appendChild(row);
+      });
+      if (!usersResult.data.length) usersBody.innerHTML = '<tr><td colspan="6">No registered users.</td></tr>';
+
+      loginsBody.innerHTML = '';
+      loginsResult.data.forEach(event => {
+        const row = document.createElement('tr');
+        [event.full_name, event.email, event.role, new Date(event.logged_in_at).toLocaleString(), event.ip_address || '—'].forEach(value => {
+          const cell = document.createElement('td');
+          cell.textContent = value;
+          row.appendChild(cell);
+        });
+        loginsBody.appendChild(row);
+      });
+      if (!loginsResult.data.length) loginsBody.innerHTML = '<tr><td colspan="5">No successful logins recorded yet.</td></tr>';
+    } catch (error) {
+      usersBody.innerHTML = `<tr><td colspan="6">${error.message}</td></tr>`;
+      loginsBody.innerHTML = '<tr><td colspan="5">Could not load login activity.</td></tr>';
+    }
+  }
+
+  document.getElementById('btnRefreshAdmin').addEventListener('click', loadAdminDashboard);
 
   async function beginStudentTest(code) {
     const cleanCode = String(code || '').trim().toUpperCase();

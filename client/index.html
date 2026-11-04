@@ -74,6 +74,12 @@
                   <span class="role-desc">Enter code &amp; take test</span>
                 </div>
 
+                <div class="role-card-option" id="roleBtnAdmin" tabindex="0" role="button" aria-pressed="false">
+                  <div class="role-icon-box" aria-hidden="true">⚙</div>
+                  <span class="role-title">Administrator</span>
+                  <span class="role-desc">Manage users &amp; activity</span>
+                </div>
+
               </div>
             </fieldset>
 
@@ -115,8 +121,34 @@
 
             </form>
 
-            <div class="demo-credentials-note">
-              Select your account role and sign in with credentials provisioned by your ExamPortal administrator.
+            <div class="auth-switch-row">
+              <span id="authSwitchPrompt">New to ExamPortal?</span>
+              <button type="button" class="btn-link" id="btnShowRegister">Create an account</button>
+            </div>
+
+            <form id="authRegisterForm" class="form-stack" hidden>
+              <div class="form-group">
+                <label class="form-label" for="registerFullName">Full name</label>
+                <input class="form-input" id="registerFullName" name="fullName" maxlength="150" autocomplete="name" required>
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="registerEmail">Email</label>
+                <input class="form-input" id="registerEmail" name="email" type="email" maxlength="254" autocomplete="email" required>
+              </div>
+              <div class="form-group" id="registerStudentIdGroup">
+                <label class="form-label" for="registerStudentId">Student ID</label>
+                <input class="form-input" id="registerStudentId" name="studentId" maxlength="50">
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="registerPassword">Password</label>
+                <input class="form-input" id="registerPassword" name="password" type="password" minlength="12" maxlength="128" autocomplete="new-password" required>
+                <span class="form-hint">Use at least 12 characters.</span>
+              </div>
+              <button type="submit" class="btn btn-primary btn-full" id="btnRegisterSubmit">Create Student Account</button>
+            </form>
+
+            <div class="demo-credentials-note" id="authHelpText">
+              Sign in with your registered account. Teachers can register freely.
             </div>
 
           </div>
@@ -601,6 +633,48 @@
       </main>
 
     </div>
+  </section>
+
+  <!-- ======================================================================
+       ADMINISTRATION: REGISTERED USERS & LOGIN ACTIVITY
+       ====================================================================== -->
+  <section class="portal-screen" id="screen-admin" aria-label="Administration Dashboard">
+    <header class="top-nav">
+      <div class="nav-container">
+        <div class="nav-brand-group">
+          <div class="brand-link"><span>ExamPortal</span></div>
+          <span class="role-badge role-badge-teacher">Administrator</span>
+        </div>
+        <div class="nav-actions">
+          <span class="user-name" id="adminDisplayName">Administrator</span>
+          <button type="button" class="btn-icon-text logout-btn">Logout</button>
+        </div>
+      </div>
+    </header>
+    <main class="layout-container">
+      <div class="page-header">
+        <h1 class="page-title">User Management &amp; Login Activity</h1>
+        <p class="page-subtitle">Review registered students and teachers, and see recent successful sign-ins.</p>
+      </div>
+      <section class="card" style="margin-bottom:24px;">
+        <header class="card-header"><h2 class="card-title">Registered Users</h2><button type="button" class="btn btn-secondary btn-sm" id="btnRefreshAdmin">Refresh</button></header>
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead><tr><th>Name</th><th>Email</th><th>Student ID</th><th>Role</th><th>Status</th><th>Registered</th></tr></thead>
+            <tbody id="adminUsersBody"><tr><td colspan="6">Loading users...</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+      <section class="card">
+        <header class="card-header"><h2 class="card-title">Recent Login Activity</h2></header>
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead><tr><th>User</th><th>Email</th><th>Role</th><th>Login time</th><th>IP address</th></tr></thead>
+            <tbody id="adminLoginsBody"><tr><td colspan="5">Loading activity...</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
   </section>
 
   <!-- ======================================================================
