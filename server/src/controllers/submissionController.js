@@ -529,4 +529,117 @@ export async function recordIntegrityEvent(req, res) {
   }
 }
 
-export default { getSubmissionState, putAnswer, submitExamHandler, recordIntegrityEvent };
+
+/**
+ * GET /api/submissions/mine
+ * Completed test history for the signed-in student.
+ */
+export async function getMySubmissionHistory(req, res) {
+  try {
+    const { rows } = await pool.query(
+      `SELECT s.id AS submission_id, s.exam_id, e.title AS exam_title,
+              e.batch, s.status, s.total_score, s.percentage, s.passed,
+              s.submitted_at, e.total_marks,
+              (SELECT COUNT(*)::int FROM questions q WHERE q.exam_id = s.exam_id) AS total_questions,
+              (SELECT COUNT(*)::int FROM submission_answers sa
+                WHERE sa.submission_id = s.id AND sa.selected_option_id IS NOT NULL) AS answered_count
+         FROM submissions s
+         JOIN exams e ON e.id = s.exam_id
+        WHERE s.student_id = $1 AND s.status <> 'IN_PROGRESS'
+        ORDER BY s.submitted_at DESC NULLS LAST, s.started_at DESC;`,
+      [req.user.id]
+    );
+    return sendSuccess(res, { message: 'Completed test history retrieved.', data: rows });
+  } catch (error) {
+    if (error.code === 'ECONNREFUSED') {
+      return sendError(res, { statusCode: 503, code: 'DATABASE_UNAVAILABLE', message: 'Database connection unavailable.' });
+    }
+    throw error;
+  }
+}
+
+/**
+ * GET /api/submissions/:id/review
+ * Post-submission answer review for the owning student only.
+ */
+export async function getSubmissionReview(req, res) {
+  const client = await connectOrRespond(res);
+  if (!client) return;
+  try {
+    const { rows: attempts } = await client.query(
+      `SELECT s.id, s.exam_id, s.student_id, s.status, s.total_score,
+              s.percentage, s.passed, s.submitted_at, e.title AS exam_title,
+              e.total_marks
+         FROM submissions s JOIN exams e ON e.id = s.exam_id
+        WHERE s.id = $1 LIMIT 1;`,
+      [req.params.id]
+    );
+    const attempt = attempts[0];
+    if (!attempt) return sendError(res, { statusCode: 404, code: 'SUBMISSION_NOT_FOUND', message: 'Test attempt not found.' });
+    if (attempt.student_id !== req.user.id && req.user.role !== 'ADMIN') {
+      return sendError(res, { statusCode: 403, code: 'FORBIDDEN', message: 'You cannot review another student\'s attempt.' });
+    }
+    if (attempt.status === 'IN_PROGRESS') {
+      return sendError(res, { statusCode: 409, code: 'REVIEW_NOT_AVAILABLE', message: 'Review is available after the test is submitted.' });
+    }
+
+    const { rows: questions } = await client.query(
+      `SELECT q.id, q.question_text, q.question_type, q.marks, q.negative_marks,
+              q.position, q.explanation, sa.selected_option_id, sa.is_correct,
+              sa.awarded_marks
+         FROM questions q
+         LEFT JOIN submission_answers sa
+           ON sa.question_id = q.id AND sa.submission_id = $1
+        WHERE q.exam_id = $2 ORDER BY q.position ASC;`,
+      [attempt.id, attempt.exam_id]
+    );
+    const questionIds = questions.map(q => q.id);
+    const { rows: options } = questionIds.length ? await client.query(
+      `SELECT id, question_id, option_text, is_correct, position
+         FROM options WHERE question_id = ANY($1::uuid[]) ORDER BY position ASC;`,
+      [questionIds]
+    ) : { rows: [] };
+
+    const optionsByQuestion = {};
+    for (const option of options) {
+      (optionsByQuestion[option.question_id] ||= []).push({
+        id: option.id,
+        text: option.option_text,
+        isCorrect: option.is_correct
+      });
+    }
+    return sendSuccess(res, {
+      message: 'Test review retrieved.',
+      data: {
+        submissionId: attempt.id,
+        examTitle: attempt.exam_title,
+        status: attempt.status,
+        totalScore: attempt.total_score,
+        totalMarks: attempt.total_marks,
+        percentage: attempt.percentage,
+        passed: attempt.passed,
+        submittedAt: attempt.submitted_at,
+        questions: questions.map((q, index) => ({
+          number: index + 1,
+          prompt: q.question_text,
+          marks: q.marks,
+          awardedMarks: q.awarded_marks,
+          isCorrect: q.is_correct === true,
+          explanation: q.explanation,
+          selectedOptionId: q.selected_option_id,
+          options: optionsByQuestion[q.id] || []
+        }))
+      }
+    });
+  } catch (error) {
+    if (error.code === 'ECONNREFUSED') {
+      return sendError(res, { statusCode: 503, code: 'DATABASE_UNAVAILABLE', message: 'Database connection unavailable.' });
+    }
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export default { getSubmissionState, putAnswer, submitExamHandler, recordIntegrityEvent, getMySubmissionHistory, getSubmissionReview };
+
