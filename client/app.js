@@ -1158,6 +1158,7 @@ document.addEventListener('DOMContentLoaded', () => {
     state.strikeCount = 0;
     clearAnswerSaveError();
     showScreen('screen-student-dash');
+    await loadStudentHistory();
   });
 
   /* --------------------------------------------------------------------------
