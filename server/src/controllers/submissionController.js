@@ -92,8 +92,6 @@ async function scoreAndFinalise(client, sub, finalStatus) {
 
   // Score each question
   let totalScore = 0;
-  const negEnabled = sub.negative_marking_enabled;
-  const negPenalty = parseFloat(sub.negative_marks_per_wrong_answer ?? 0);
 
   for (const q of questions) {
     const selected = answerByQuestion[q.id] ?? null;
@@ -106,10 +104,8 @@ async function scoreAndFinalise(client, sub, finalStatus) {
         awardedMarks = parseFloat(q.marks);
         isCorrect = true;
       } else {
-        // Wrong answer
-        const qNeg = parseFloat(q.negative_marks ?? 0);
-        const penalty = qNeg > 0 ? qNeg : (negEnabled ? negPenalty : 0);
-        awardedMarks = -penalty;
+        // Wrong answers receive zero marks; no negative marking is applied.
+        awardedMarks = 0;
         isCorrect = false;
       }
     }

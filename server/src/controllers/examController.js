@@ -15,7 +15,7 @@ function normalizeQuestions(rawQuestions) {
   return rawQuestions.map((q, qIdx) => {
     const prompt = q.questionText || q.prompt || '';
     const marks = parseFloat(q.marks || 2.00);
-    const negativeMarks = parseFloat(q.negativeMarks || 0.50);
+    const negativeMarks = 0; // Negative marking is disabled for all questions.
     const questionType = q.questionType || 'SINGLE_CHOICE';
     const explanation = q.explanation || null;
     const position = q.position || (qIdx + 1);
