@@ -853,6 +853,47 @@ export async function getExamByAccessCode(req, res) {
   }
 }
 
+
+/**
+ * GET /api/exams/:id/results
+ * Complete result list for every student who attempted a teacher-owned exam.
+ */
+export async function getExamResults(req, res) {
+  try {
+    const { rows: exams } = await pool.query(
+      'SELECT id, teacher_id, title, total_marks FROM exams WHERE id = $1 LIMIT 1;',
+      [req.params.id]
+    );
+    const exam = exams[0];
+    if (!exam) return sendError(res, { statusCode: 404, code: 'EXAM_NOT_FOUND', message: 'Exam not found.' });
+    if (exam.teacher_id !== req.user.id && req.user.role !== 'ADMIN') {
+      return sendError(res, { statusCode: 403, code: 'FORBIDDEN', message: 'Not authorized to view results for this exam.' });
+    }
+    const { rows } = await pool.query(
+      `SELECT s.id AS submission_id, u.full_name AS student_name,
+              u.email AS student_email, u.student_id, s.status,
+              s.total_score, s.percentage, s.passed, s.submitted_at,
+              s.started_at, s.tab_switch_count,
+              (SELECT COUNT(*)::int FROM questions q WHERE q.exam_id = s.exam_id) AS total_questions,
+              (SELECT COUNT(*)::int FROM submission_answers sa
+                WHERE sa.submission_id = s.id AND sa.selected_option_id IS NOT NULL) AS answered_count
+         FROM submissions s JOIN users u ON u.id = s.student_id
+        WHERE s.exam_id = $1
+        ORDER BY s.submitted_at DESC NULLS LAST, s.started_at DESC;`,
+      [req.params.id]
+    );
+    return sendSuccess(res, {
+      message: 'Exam results retrieved.',
+      data: { exam: { id: exam.id, title: exam.title, totalMarks: exam.total_marks }, results: rows }
+    });
+  } catch (error) {
+    if (error.code === 'ECONNREFUSED') {
+      return sendError(res, { statusCode: 503, code: 'DATABASE_UNAVAILABLE', message: 'Database connection unavailable.' });
+    }
+    throw error;
+  }
+}
+
 export default {
   createExam,
   getMyExams,
