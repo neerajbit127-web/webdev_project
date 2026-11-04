@@ -199,6 +199,7 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('studentDisplayName').textContent = state.currentUser.fullName || 'Student';
         document.getElementById('studentDisplayId').textContent = `Student ID: ${state.currentUser.studentId || ''}`;
         showScreen('screen-student-dash');
+        await loadStudentHistory();
 
         if (state.pendingExamCode) {
           const pendingCode = state.pendingExamCode;
@@ -391,12 +392,134 @@ document.addEventListener('DOMContentLoaded', () => {
             <button type="button" class="btn btn-secondary btn-sm" onclick="testExamDirectly('${exam.code}')">
               Test
             </button>
+            <button type="button" class="btn btn-primary btn-sm" data-results-exam="${exam.id}">
+              Results
+            </button>
           </div>
         </td>
       `;
       createdExamsTableBody.appendChild(tr);
     });
   }
+
+
+  /* --------------------------------------------------------------------------
+     Student Results History & Answer Review
+     -------------------------------------------------------------------------- */
+  const studentHistoryHost = document.createElement('section');
+  studentHistoryHost.className = 'card';
+  studentHistoryHost.id = 'studentHistoryCard';
+  studentHistoryHost.style.marginTop = '24px';
+  studentHistoryHost.innerHTML = `
+    <header class="card-header">
+      <div><h2 class="card-title">My Test History</h2><span class="exam-meta-code">Your completed assessments and performance</span></div>
+      <button type="button" class="btn btn-secondary btn-sm" id="btnRefreshStudentHistory">Refresh</button>
+    </header>
+    <div class="table-responsive">
+      <table class="data-table"><thead><tr><th>Test</th><th>Score</th><th>Percentage</th><th>Result</th><th>Submitted</th><th>Review</th></tr></thead>
+      <tbody id="studentHistoryBody"><tr><td colspan="6">Loading test history...</td></tr></tbody></table>
+    </div>
+    <div id="studentReviewPanel" style="padding:0 20px 20px"></div>`;
+  const studentEntry = document.querySelector('#screen-student-dash .student-entry-container');
+  if (studentEntry) studentEntry.appendChild(studentHistoryHost);
+
+  function safeText(value) {
+    return String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+  }
+  async function loadStudentHistory() {
+    const body = document.getElementById('studentHistoryBody');
+    if (!body || !state.token) return;
+    body.innerHTML = '<tr><td colspan="6">Loading test history...</td></tr>';
+    try {
+      const response = await fetch('/api/submissions/mine', { headers: { Authorization: `Bearer ${state.token}` } });
+      const result = await response.json();
+      if (!response.ok || !result.success) throw new Error(result.error?.message || 'Unable to load test history.');
+      if (!result.data.length) {
+        body.innerHTML = '<tr><td colspan="6">No completed tests yet. Your results will appear here after you submit a test.</td></tr>';
+        return;
+      }
+      body.innerHTML = result.data.map(item => `
+        <tr>
+          <td><strong>${safeText(item.exam_title)}</strong><div class="exam-meta-code">${safeText(item.batch || 'General')}</div></td>
+          <td>${safeText(item.total_score ?? '—')} / ${safeText(item.total_marks)}</td>
+          <td>${Number(item.percentage || 0).toFixed(1)}%</td>
+          <td><span class="status-pill ${item.passed ? 'status-active' : 'status-draft'}">${item.passed ? 'PASSED' : 'NOT PASSED'}</span></td>
+          <td>${item.submitted_at ? new Date(item.submitted_at).toLocaleString() : '—'}</td>
+          <td><button class="btn btn-secondary btn-sm" data-review-id="${safeText(item.submission_id)}">Review answers</button></td>
+        </tr>`).join('');
+    } catch (error) {
+      body.innerHTML = `<tr><td colspan="6">${safeText(error.message)}</td></tr>`;
+    }
+  }
+  document.getElementById('btnRefreshStudentHistory')?.addEventListener('click', loadStudentHistory);
+  document.getElementById('studentHistoryBody')?.addEventListener('click', async event => {
+    const button = event.target.closest('[data-review-id]');
+    if (!button) return;
+    const panel = document.getElementById('studentReviewPanel');
+    panel.innerHTML = '<p>Loading answer review...</p>';
+    try {
+      const response = await fetch(`/api/submissions/${encodeURIComponent(button.dataset.reviewId)}/review`, {
+        headers: { Authorization: `Bearer ${state.token}` }
+      });
+      const result = await response.json();
+      if (!response.ok || !result.success) throw new Error(result.error?.message || 'Unable to load answer review.');
+      const review = result.data;
+      panel.innerHTML = `<h3 style="margin:20px 0 8px">${safeText(review.examTitle)} — Answer Review</h3>
+        <p><strong>Score:</strong> ${safeText(review.totalScore)} / ${safeText(review.totalMarks)} · ${Number(review.percentage || 0).toFixed(1)}% · ${review.passed ? 'Passed' : 'Not passed'}</p>
+        ${review.questions.map(q => `
+          <article class="card" style="margin-top:12px;padding:16px">
+            <h4>Q${q.number}. ${safeText(q.prompt)}</h4>
+            <p><strong>${q.isCorrect ? 'Correct' : 'Incorrect / unanswered'}</strong> · Awarded: ${safeText(q.awardedMarks ?? 0)} / ${safeText(q.marks)}</p>
+            ${q.options.map(option => `<p style="margin:6px 0;padding:8px;border-radius:6px;background:${option.isCorrect ? '#dcfce7' : option.id === q.selectedOptionId ? '#fee2e2' : 'transparent'}">${option.isCorrect ? '✓ Correct answer: ' : option.id === q.selectedOptionId ? 'Your answer: ' : ''}${safeText(option.text)}</p>`).join('')}
+            ${q.explanation ? `<p><strong>Explanation:</strong> ${safeText(q.explanation)}</p>` : ''}
+          </article>`).join('')}`;
+      panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } catch (error) { panel.textContent = error.message; }
+  });
+
+
+
+  // Teacher results: show every attempt for the selected exam.
+  const teacherResultsPanel = document.createElement('section');
+  teacherResultsPanel.className = 'card';
+  teacherResultsPanel.id = 'teacherResultsPanel';
+  teacherResultsPanel.hidden = true;
+  teacherResultsPanel.style.marginTop = '24px';
+  teacherResultsPanel.innerHTML = `
+    <header class="card-header"><div><h2 class="card-title" id="teacherResultsTitle">Student Results</h2><span class="exam-meta-code" id="teacherResultsMeta"></span></div><button class="btn btn-secondary btn-sm" id="btnCloseTeacherResults" type="button">Close</button></header>
+    <div class="table-responsive"><table class="data-table"><thead><tr><th>Student</th><th>Student ID</th><th>Score</th><th>Percentage</th><th>Result</th><th>Attempt status</th><th>Submitted</th></tr></thead><tbody id="teacherResultsBody"></tbody></table></div>`;
+  document.querySelector('#screen-teacher .layout-container')?.appendChild(teacherResultsPanel);
+  async function loadTeacherResults(examId) {
+    teacherResultsPanel.hidden = false;
+    document.getElementById('teacherResultsBody').innerHTML = '<tr><td colspan="7">Loading results...</td></tr>';
+    try {
+      const response = await fetch(`/api/exams/${encodeURIComponent(examId)}/results`, { headers: { Authorization: `Bearer ${state.token}` } });
+      const result = await response.json();
+      if (!response.ok || !result.success) throw new Error(result.error?.message || 'Unable to load results.');
+      document.getElementById('teacherResultsTitle').textContent = result.data.exam.title + ' — Student Results';
+      document.getElementById('teacherResultsMeta').textContent = `${result.data.results.length} student attempt(s)`;
+      document.getElementById('teacherResultsBody').innerHTML = result.data.results.length
+        ? result.data.results.map(row => `<tr>
+            <td>${safeText(row.student_name)}<div class="exam-meta-code">${safeText(row.student_email)}</div></td>
+            <td>${safeText(row.student_id || '—')}</td>
+            <td>${row.total_score === null ? '—' : safeText(row.total_score) + ' / ' + safeText(result.data.exam.totalMarks)}</td>
+            <td>${row.percentage === null ? '—' : Number(row.percentage).toFixed(1) + '%'}</td>
+            <td>${row.passed === null ? 'Pending' : row.passed ? 'PASSED' : 'NOT PASSED'}</td>
+            <td>${safeText(row.status)}</td>
+            <td>${row.submitted_at ? new Date(row.submitted_at).toLocaleString() : '—'}</td>
+          </tr>`).join('')
+        : '<tr><td colspan="7">No students have attempted this test yet.</td></tr>';
+      teacherResultsPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } catch (error) {
+      document.getElementById('teacherResultsBody').innerHTML = `<tr><td colspan="7">${safeText(error.message)}</td></tr>`;
+    }
+  }
+  document.getElementById('btnCloseTeacherResults')?.addEventListener('click', () => { teacherResultsPanel.hidden = true; });
+  createdExamsTableBody?.addEventListener('click', event => {
+    const button = event.target.closest('[data-results-exam]');
+    if (button) loadTeacherResults(button.dataset.resultsExam);
+  });
+
 
   // Publish Exam & Generate Code Handler
   createExamForm.addEventListener('submit', (e) => {
