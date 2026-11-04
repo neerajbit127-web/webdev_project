@@ -1141,7 +1141,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  document.getElementById('btnReturnToStudentDash').addEventListener('click', () => {
+  document.getElementById('btnReturnToStudentDash').addEventListener('click', async () => {
     document.getElementById('submitResultModal').classList.remove('active');
     preExamDetailsCard.classList.remove('active');
     inputExamCode.value = '';
