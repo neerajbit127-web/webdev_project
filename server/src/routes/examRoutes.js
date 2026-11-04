@@ -7,6 +7,7 @@ import {
   publishExam,
   archiveExam,
   getExamSummary,
+  getExamResults,
   getExamByAccessCode
 } from '../controllers/examController.js';
 import {
@@ -69,6 +70,9 @@ examRouter.post('/:id/archive', ...teacherOnly, archiveExam);
 
 // GET /api/exams/:id/summary - teacher-facing analytics & submission summary
 examRouter.get('/:id/summary', ...teacherOnly, getExamSummary);
+
+// GET /api/exams/:id/results - every student's result for this exam
+examRouter.get('/:id/results', ...teacherOnly, getExamResults);
 
 // --- Question Management Endpoints (Teacher Drafts) ---
 // GET /api/exams/:examId/questions - list questions including correct answer & explanation
