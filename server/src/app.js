@@ -46,12 +46,10 @@ export function createApp() {
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-  // Local development serves the client directory. Vercel serves the
-  // synchronized public/ directory through its static CDN instead.
-  if (!process.env.VERCEL) {
-    app.use(express.static(clientDir));
-    app.use('/Online-Exam-Portal', express.static(clientDir));
-  }
+  // Serve frontend static assets from client directory
+  app.use(express.static(clientDir));
+  // Backward compatibility alias if old folder URL was opened
+  app.use('/Online-Exam-Portal', express.static(clientDir));
 
   // Global rate limiter for API namespace
   app.use('/api', apiRateLimiter);
