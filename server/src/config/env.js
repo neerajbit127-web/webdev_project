@@ -27,7 +27,8 @@ function validateEnv() {
   }
 
   // Client origins for CORS
-  const rawOrigins = process.env.CLIENT_ORIGIN || process.env.RENDER_EXTERNAL_URL || 'http://localhost:5000,http://127.0.0.1:5000';
+  const vercelOrigin = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '';
+  const rawOrigins = process.env.CLIENT_ORIGIN || [process.env.RENDER_EXTERNAL_URL, vercelOrigin, 'http://localhost:5000', 'http://127.0.0.1:5000'].filter(Boolean).join(',');
   const clientOrigins = rawOrigins.split(',').map(o => o.trim()).filter(Boolean);
   if (clientOrigins.length === 0) {
     errors.push('CLIENT_ORIGIN must contain at least one valid origin URL.');
