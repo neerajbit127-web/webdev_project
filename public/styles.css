@@ -1373,32 +1373,3 @@ body {
 .modal-actions .btn {
   width: 100%;
 }
-
-
-/* Registration and administrator screens */
-[hidden] { display: none !important; }
-.auth-switch-row {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 6px;
-  margin-top: 18px;
-  font-size: 0.875rem;
-  color: var(--text-muted);
-}
-.btn-link {
-  border: 0;
-  background: transparent;
-  color: var(--primary);
-  font: inherit;
-  font-weight: 600;
-  cursor: pointer;
-}
-.btn-link:hover { text-decoration: underline; }
-#screen-auth .role-selector-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-#screen-auth .role-card-option { min-width: 0; }
-#screen-admin .table-responsive { overflow-x: auto; }
-#screen-admin .data-table { min-width: 760px; }
-@media (max-width: 560px) {
-  #screen-auth .role-selector-grid { grid-template-columns: 1fr; }
-}
