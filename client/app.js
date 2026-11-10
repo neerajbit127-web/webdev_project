@@ -233,7 +233,15 @@ document.addEventListener('DOMContentLoaded', () => {
   const examFileInput = document.getElementById('examFileInput');
   const filePreview = document.getElementById('filePreview');
   const fileNameDisplay = document.getElementById('fileNameDisplay');
+  const examNegativeMarkingEnabled = document.getElementById('examNegativeMarkingEnabled');
+  const groupNegativePenalty = document.getElementById('groupNegativePenalty');
   let selectedFile = null;
+
+  if (examNegativeMarkingEnabled && groupNegativePenalty) {
+    examNegativeMarkingEnabled.addEventListener('change', () => {
+      groupNegativePenalty.style.display = examNegativeMarkingEnabled.value === 'yes' ? 'block' : 'none';
+    });
+  }
 
   if (fileDropzone && examFileInput) {
     fileDropzone.addEventListener('click', () => examFileInput.click());
@@ -269,15 +277,17 @@ document.addEventListener('DOMContentLoaded', () => {
   /**
    * Parses questions from plain text, Markdown, or JSON.
    */
-  function parseQuestionsFromText(text) {
+  function parseQuestionsFromText(text, defaultMarks = 2, defaultNegativeMarks = 0) {
     // 1. Try parsing JSON format
     try {
       const parsed = JSON.parse(text);
-      if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].prompt && parsed[0].options) {
-        return parsed;
-      }
-      if (parsed.questions && Array.isArray(parsed.questions) && parsed.questions.length > 0) {
-        return parsed.questions;
+      const list = Array.isArray(parsed) ? parsed : (parsed.questions && Array.isArray(parsed.questions) ? parsed.questions : null);
+      if (list && list.length > 0 && list[0].prompt && list[0].options) {
+        return list.map(q => ({
+          ...q,
+          marks: q.marks !== undefined ? parseFloat(q.marks) : parseFloat(defaultMarks),
+          negativeMarks: q.negativeMarks !== undefined ? parseFloat(q.negativeMarks) : parseFloat(defaultNegativeMarks)
+        }));
       }
     } catch (_) {}
 
@@ -298,6 +308,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         currentQ = {
           prompt: qMatch[1].trim(),
+          marks: parseFloat(defaultMarks),
+          negativeMarks: parseFloat(defaultNegativeMarks),
           options: [],
           correctIndex: 0
         };
@@ -527,6 +539,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const title = document.getElementById('examTitle').value.trim();
     const duration = parseInt(document.getElementById('examDuration').value, 10) || 45;
     const batch = document.getElementById('targetBatch').value.trim() || 'General Batch';
+    const marksPerQuestion = parseFloat(document.getElementById('examMarksPerQuestion')?.value || 2);
+    const negativeMarkingEnabled = document.getElementById('examNegativeMarkingEnabled')?.value === 'yes';
+    const negativeMarksPerWrongAnswer = negativeMarkingEnabled
+      ? parseFloat(document.getElementById('examNegativePenalty')?.value || 0.5)
+      : 0.00;
     const btnPublish = document.getElementById('btnPublishExam');
 
     const proceedWithQuestions = async (questions) => {
@@ -551,6 +568,9 @@ document.addEventListener('DOMContentLoaded', () => {
             title,
             durationMinutes: duration,
             batch,
+            marksPerQuestion,
+            negativeMarkingEnabled,
+            negativeMarksPerWrongAnswer,
             publishImmediately: true,
             questions
           })
@@ -588,7 +608,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const reader = new FileReader();
       reader.onload = (event) => {
         const fileContent = event.target.result;
-        const parsedQuestions = parseQuestionsFromText(fileContent);
+        const parsedQuestions = parseQuestionsFromText(fileContent, marksPerQuestion, negativeMarksPerWrongAnswer);
         proceedWithQuestions(parsedQuestions);
       };
       reader.onerror = () => {
@@ -676,6 +696,28 @@ document.addEventListener('DOMContentLoaded', () => {
         preExamBatch.textContent = `Target: ${found.batch || 'General'} • Access Code: ${found.code}`;
         preExamDuration.textContent = `${found.durationMinutes || found.duration} Mins`;
         preExamQuestions.textContent = `${found.questionCount || 0} Questions`;
+
+        const preExamTotalMarks = document.getElementById('preExamTotalMarks');
+        if (preExamTotalMarks) {
+          preExamTotalMarks.textContent = `${parseFloat(found.totalMarks || 0).toFixed(1)} Pts`;
+        }
+
+        const preExamMarkingScheme = document.getElementById('preExamMarkingScheme');
+        const preExamMarkingRule = document.getElementById('preExamMarkingRule');
+        const isNeg = Boolean(found.negativeMarkingEnabled);
+        const penalty = parseFloat(found.negativeMarksPerWrongAnswer || 0);
+        const qCount = parseInt(found.questionCount || 0, 10);
+        const marksPerQ = qCount > 0 ? (parseFloat(found.totalMarks || 0) / qCount).toFixed(1).replace(/\.0$/, '') : '2';
+
+        if (preExamMarkingScheme) {
+          preExamMarkingScheme.textContent = isNeg ? `+${marksPerQ} / -${penalty} Pts` : `+${marksPerQ} / 0 Pts`;
+        }
+        if (preExamMarkingRule) {
+          preExamMarkingRule.innerHTML = isNeg
+            ? `<strong>Marking Scheme:</strong> Correct answers earn positive marks. Incorrect answers deduct <strong>${penalty} marks</strong> penalty. Unanswered questions receive 0 marks.`
+            : `<strong>Marking Scheme:</strong> Correct answers earn positive marks. No negative marking for wrong or unanswered questions (0 marks).`;
+        }
+
         preExamDetailsCard.classList.add('active');
         preExamDetailsCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       } else {
@@ -1089,11 +1131,24 @@ document.addEventListener('DOMContentLoaded', () => {
         const d = result.data;
         const resultSummaryBox = document.getElementById('resultSummaryBox');
         resultSummaryBox.innerHTML = `
-          <strong>Exam:</strong> ${state.activeExam?.title || ''}<br>
-          <strong>Candidate:</strong> ${state.currentUser?.fullName || state.currentUser?.name || ''} (${state.currentUser?.studentId || state.currentUser?.identifier || ''})<br>
-          <strong>Questions Attempted:</strong> ${d.answeredCount} of ${d.totalQuestions}<br>
-          <strong>Calculated Score:</strong> ${d.totalScore} pts — ${parseFloat(d.percentage).toFixed(1)}% ${d.passed ? '<span style="color:var(--success,#16a34a)">✓ PASSED</span>' : '<span style="color:#b91c1c">✗ NOT PASSED</span>'}<br>
-          <strong>Security Audit:</strong> ${state.strikeCount} proctoring strikes recorded
+          <div style="display:flex;flex-direction:column;gap:10px;">
+            <div><strong>Exam:</strong> ${safeText(state.activeExam?.title || '')}</div>
+            <div><strong>Candidate:</strong> ${safeText(state.currentUser?.fullName || state.currentUser?.name || '')} (${safeText(state.currentUser?.studentId || state.currentUser?.identifier || '')})</div>
+            <div style="border-top:1px solid var(--border-color,#e2e8f0);padding-top:8px;display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:0.95em;">
+              <div><strong>Correct Answers:</strong> <span style="color:var(--success,#16a34a);font-weight:600;">${d.correctCount ?? 0}</span></div>
+              <div><strong>Wrong Answers:</strong> <span style="color:#b91c1c;font-weight:600;">${d.wrongCount ?? 0}</span></div>
+              <div><strong>Unanswered:</strong> <span>${d.unansweredCount ?? 0}</span> (Total: ${d.totalQuestions ?? 0})</div>
+              <div><strong>Positive Marks:</strong> +${d.positiveMarksEarned ?? 0}</div>
+              <div><strong>Negative Deductions:</strong> -${d.negativeMarksDeducted ?? 0}</div>
+              <div><strong>Final Score:</strong> <strong>${d.totalScore} pts</strong></div>
+            </div>
+            <div style="border-top:1px solid var(--border-color,#e2e8f0);padding-top:8px;font-size:1.05em;">
+              <strong>Percentage:</strong> ${parseFloat(d.percentage || 0).toFixed(1)}% — ${d.passed ? '<span style="color:var(--success,#16a34a);font-weight:700;">✓ PASSED</span>' : '<span style="color:#b91c1c;font-weight:700;">✗ NOT PASSED</span>'}
+            </div>
+            <div style="font-size:0.85em;color:var(--text-muted,#64748b);">
+              Security Audit: ${state.strikeCount} proctoring strikes recorded
+            </div>
+          </div>
         `;
       } else {
         // Do not imply that the server recorded a submission when it did not.
@@ -1120,12 +1175,19 @@ document.addEventListener('DOMContentLoaded', () => {
     const resultSummaryBox = document.getElementById('resultSummaryBox');
     const answeredCount = Object.keys(state.userAnswers).length;
     const total = (state.activeExam?.questions || []).length;
+    const unanswered = Math.max(0, total - answeredCount);
     resultSummaryBox.innerHTML = `
-      <strong>Exam:</strong> ${state.activeExam?.title || ''}<br>
-      <strong>Candidate:</strong> ${state.currentUser?.fullName || state.currentUser?.name || ''} (${state.currentUser?.studentId || state.currentUser?.identifier || ''})<br>
-      <strong>Questions Attempted:</strong> ${answeredCount} of ${total}<br>
-      <strong>Score:</strong> Calculated by server (result pending connection)<br>
-      <strong>Security Audit:</strong> ${state.strikeCount} proctoring strikes recorded
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <div><strong>Exam:</strong> ${safeText(state.activeExam?.title || '')}</div>
+        <div><strong>Candidate:</strong> ${safeText(state.currentUser?.fullName || state.currentUser?.name || '')} (${safeText(state.currentUser?.studentId || state.currentUser?.identifier || '')})</div>
+        <div style="border-top:1px solid var(--border-color,#e2e8f0);padding-top:6px;">
+          <strong>Questions Attempted:</strong> ${answeredCount} of ${total} (${unanswered} unanswered)<br>
+          <strong>Score:</strong> Calculated by server (result pending connection)
+        </div>
+        <div style="font-size:0.85em;color:var(--text-muted,#64748b);">
+          Security Audit: ${state.strikeCount} proctoring strikes recorded
+        </div>
+      </div>
     `;
   }
 

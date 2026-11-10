@@ -36,3 +36,14 @@ Thumbs.db
 *.sln
 *.sw?
 
+# Legacy root files (preserved locally, untracked in GitHub repository)
+/app.js
+/index.html
+/student.html
+/teacher.html
+/styles.css
+/script.js
+/server.js
+/src/
+/migrations/
+

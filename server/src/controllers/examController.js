@@ -9,13 +9,27 @@ import {
 /**
  * Normalizes question and option formats from client payloads.
  */
-function normalizeQuestions(rawQuestions) {
+function normalizeQuestions(rawQuestions, defaultMarks = 2.00, negativeMarkingEnabled = false, defaultNegativeMarks = 0.50) {
   if (!Array.isArray(rawQuestions)) return [];
+
+  const defMarks = parseFloat(defaultMarks) > 0 ? parseFloat(defaultMarks) : 2.00;
+  const isNeg = Boolean(negativeMarkingEnabled);
+  const defNegMarks = isNeg ? (parseFloat(defaultNegativeMarks) >= 0 ? parseFloat(defaultNegativeMarks) : 0.50) : 0.00;
 
   return rawQuestions.map((q, qIdx) => {
     const prompt = q.questionText || q.prompt || '';
-    const marks = parseFloat(q.marks || 2.00);
-    const negativeMarks = 0; // Negative marking is disabled for all questions.
+    // Preserve compatibility with existing per-question marks if explicitly specified; otherwise use teacher's configured marks
+    const marks = q.marks !== undefined && q.marks !== null && !isNaN(parseFloat(q.marks))
+      ? parseFloat(q.marks)
+      : defMarks;
+
+    // If negative marking is enabled, preserve per-question negative marks if provided, otherwise apply configured penalty
+    const negativeMarks = isNeg
+      ? (q.negativeMarks !== undefined && q.negativeMarks !== null && !isNaN(parseFloat(q.negativeMarks))
+          ? parseFloat(q.negativeMarks)
+          : defNegMarks)
+      : 0.00;
+
     const questionType = q.questionType || 'SINGLE_CHOICE';
     const explanation = q.explanation || null;
     const position = q.position || (qIdx + 1);
@@ -58,8 +72,9 @@ export async function createExam(req, res) {
     batch = 'General',
     durationMinutes = 45,
     passingMarks = 0,
+    marksPerQuestion = 2.00,
     negativeMarkingEnabled = false,
-    negativeMarksPerWrongAnswer = 0.00,
+    negativeMarksPerWrongAnswer = 0.50,
     shuffleQuestions = true,
     shuffleOptions = true,
     maxTabSwitches = 3,
@@ -86,7 +101,10 @@ export async function createExam(req, res) {
     });
   }
 
-  const questions = normalizeQuestions(rawQuestions);
+  const isNegEnabled = Boolean(negativeMarkingEnabled === true || negativeMarkingEnabled === 'true' || negativeMarkingEnabled === 'yes');
+  const penaltyPerWrong = isNegEnabled ? Math.max(0, parseFloat(negativeMarksPerWrongAnswer ?? 0.50)) : 0.00;
+  const defaultCorrectMarks = Math.max(0.01, parseFloat(marksPerQuestion ?? 2.00));
+  const questions = normalizeQuestions(rawQuestions, defaultCorrectMarks, isNegEnabled, penaltyPerWrong);
 
   // 2. If publishing immediately, validate questions
   if (publishImmediately) {
@@ -139,8 +157,8 @@ export async function createExam(req, res) {
       parseInt(durationMinutes, 10),
       calculatedTotalMarks,
       parseFloat(passingMarks),
-      Boolean(negativeMarkingEnabled),
-      parseFloat(negativeMarksPerWrongAnswer),
+      isNegEnabled,
+      penaltyPerWrong,
       Boolean(shuffleQuestions),
       Boolean(shuffleOptions),
       parseInt(maxTabSwitches, 10),
@@ -500,7 +518,10 @@ export async function updateExam(req, res) {
 
     // If new questions payload provided, replace questions & options
     if (rawQuestions && Array.isArray(rawQuestions)) {
-      const questions = normalizeQuestions(rawQuestions);
+      const updatedExam = updatedRows[0];
+      const isNeg = Boolean(updatedExam.negative_marking_enabled);
+      const penalty = parseFloat(updatedExam.negative_marks_per_wrong_answer || 0);
+      const questions = normalizeQuestions(rawQuestions, 2.00, isNeg, penalty);
       await client.query('DELETE FROM questions WHERE exam_id = $1;', [examId]);
 
       for (const q of questions) {

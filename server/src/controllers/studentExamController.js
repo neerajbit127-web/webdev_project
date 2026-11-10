@@ -103,6 +103,7 @@ export async function lookupExam(req, res) {
       `SELECT 
         e.id, e.title, e.description, e.batch, e.access_code,
         e.duration_minutes, e.total_marks, e.passing_marks,
+        e.negative_marking_enabled, e.negative_marks_per_wrong_answer,
         e.start_time, e.end_time, e.status,
         COUNT(q.id)::int AS question_count
        FROM exams e
@@ -153,6 +154,8 @@ export async function lookupExam(req, res) {
         totalMarks: exam.total_marks,
         passingMarks: exam.passing_marks,
         questionCount: exam.question_count,
+        negativeMarkingEnabled: exam.negative_marking_enabled,
+        negativeMarksPerWrongAnswer: exam.negative_marks_per_wrong_answer,
         startTime: exam.start_time,
         endTime: exam.end_time
       }
@@ -181,6 +184,7 @@ export async function getStudentExamInfo(req, res) {
       `SELECT 
         e.id, e.title, e.description, e.batch, e.access_code,
         e.duration_minutes, e.total_marks, e.passing_marks,
+        e.negative_marking_enabled, e.negative_marks_per_wrong_answer,
         e.start_time, e.end_time, e.status,
         COUNT(q.id)::int AS question_count
        FROM exams e
@@ -231,6 +235,8 @@ export async function getStudentExamInfo(req, res) {
         totalMarks: exam.total_marks,
         passingMarks: exam.passing_marks,
         questionCount: exam.question_count,
+        negativeMarkingEnabled: exam.negative_marking_enabled,
+        negativeMarksPerWrongAnswer: exam.negative_marks_per_wrong_answer,
         startTime: exam.start_time,
         endTime: exam.end_time
       }

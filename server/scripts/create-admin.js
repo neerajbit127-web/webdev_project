@@ -3,6 +3,7 @@ import { pool, closePool } from '../src/config/database.js';
 import readline from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
 
+
 async function readHiddenPassword() {
   if (!stdin.isTTY || typeof stdin.setRawMode !== 'function') {
     throw new Error('Run this command in an interactive terminal.');
@@ -15,28 +16,32 @@ async function readHiddenPassword() {
 
   return new Promise((resolve, reject) => {
     let password = '';
-    const onData = (key) => {
-      if (key === '\\u0003') {
-        cleanup();
-        reject(new Error('Cancelled.'));
-      } else if (key === '\\r' || key === '\\n') {
-        cleanup();
-        stdout.write('\\n');
-        resolve(password);
-      } else if (key === '\\u007f' || key === '\\b') {
-        password = password.slice(0, -1);
-      } else {
-        password += key;
-      }
-    };
+
     const cleanup = () => {
       stdin.removeListener('data', onData);
       stdin.setRawMode(false);
       stdin.pause();
     };
+
+    const onData = (key) => {
+      if (key === '\u0003') {
+        cleanup();
+        reject(new Error('Cancelled.'));
+      } else if (key === '\r' || key === '\n') {
+        cleanup();
+        stdout.write('\n');
+        resolve(password);
+      } else if (key === '\u007f' || key === '\b') {
+        password = password.slice(0, -1);
+      } else {
+        password += key;
+      }
+    };
+
     stdin.on('data', onData);
   });
 }
+
 
 try {
   const password = await readHiddenPassword();

@@ -91,26 +91,47 @@ async function scoreAndFinalise(client, sub, finalStatus) {
   }
 
   // Score each question
-  let totalScore = 0;
+  const isNegativeEnabled = Boolean(sub.negative_marking_enabled);
+  const examNegativePenalty = parseFloat(sub.negative_marks_per_wrong_answer || 0);
+
+  let correctCount = 0;
+  let wrongCount = 0;
+  let unansweredCount = 0;
+  let positiveMarksEarned = 0;
+  let negativeMarksDeducted = 0;
 
   for (const q of questions) {
     const selected = answerByQuestion[q.id] ?? null;
     const correct = correctByQuestion[q.id] ?? null;
+    const qMarks = parseFloat(q.marks || 0);
+    const qNegativePenalty = isNegativeEnabled
+      ? (parseFloat(q.negative_marks) > 0 ? parseFloat(q.negative_marks) : examNegativePenalty)
+      : 0.00;
+
     let awardedMarks = 0;
     let isCorrect = false;
 
     if (selected !== null) {
       if (selected === correct) {
-        awardedMarks = parseFloat(q.marks);
+        awardedMarks = qMarks;
         isCorrect = true;
+        correctCount++;
+        positiveMarksEarned += qMarks;
       } else {
-        // Wrong answers receive zero marks; no negative marking is applied.
-        awardedMarks = 0;
         isCorrect = false;
+        wrongCount++;
+        if (isNegativeEnabled && qNegativePenalty > 0) {
+          awardedMarks = -qNegativePenalty;
+          negativeMarksDeducted += qNegativePenalty;
+        } else {
+          awardedMarks = 0.00;
+        }
       }
+    } else {
+      unansweredCount++;
+      awardedMarks = 0.00;
+      isCorrect = false;
     }
-
-    totalScore += awardedMarks;
 
     // Upsert submission_answer marks
     await client.query(
@@ -120,14 +141,17 @@ async function scoreAndFinalise(client, sub, finalStatus) {
            SET is_correct = EXCLUDED.is_correct,
                awarded_marks = EXCLUDED.awarded_marks,
                answered_at = EXCLUDED.answered_at;`,
-      [sub.id, q.id, answerByQuestion[q.id] ?? null, isCorrect, awardedMarks]
+      [sub.id, q.id, selected, isCorrect, awardedMarks]
     );
   }
 
-  // Floor total score at 0
-  totalScore = Math.max(0, totalScore);
+  // Final Score = Correct Answer Marks - Wrong Answer Penalties
+  // Unanswered questions = 0
+  // If negative marking is disabled, wrong answers = 0 marks
+  // Respect existing database constraint: final score cannot be below zero
+  let totalScore = Math.max(0, positiveMarksEarned - negativeMarksDeducted);
   const totalMarks = parseFloat(sub.total_marks ?? 1);
-  const percentage = totalMarks > 0 ? Math.min(100, (totalScore / totalMarks) * 100) : 0;
+  const percentage = totalMarks > 0 ? Math.min(100, Math.max(0, (totalScore / totalMarks) * 100)) : 0;
   const passed = totalScore >= parseFloat(sub.passing_marks ?? totalMarks);
 
   await client.query(
@@ -137,7 +161,17 @@ async function scoreAndFinalise(client, sub, finalStatus) {
     [sub.id, finalStatus, totalScore.toFixed(2), percentage.toFixed(2), passed]
   );
 
-  return { totalScore: totalScore.toFixed(2), percentage: percentage.toFixed(2), passed };
+  return {
+    totalScore: totalScore.toFixed(2),
+    percentage: percentage.toFixed(2),
+    passed,
+    correctCount,
+    wrongCount,
+    unansweredCount,
+    positiveMarksEarned: positiveMarksEarned.toFixed(2),
+    negativeMarksDeducted: negativeMarksDeducted.toFixed(2),
+    totalQuestions: questions.length
+  };
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -403,17 +437,27 @@ export async function submitExamHandler(req, res) {
     if (sub.status !== 'IN_PROGRESS') {
       await client.query('ROLLBACK');
 
-      // Count answers for response
       const { rows: ansRows } = await client.query(
-        `SELECT COUNT(*) AS answered_count
-           FROM submission_answers
-          WHERE submission_id = $1 AND selected_option_id IS NOT NULL;`,
+        `SELECT 
+           COUNT(*) FILTER (WHERE is_correct = true)::int AS correct_count,
+           COUNT(*) FILTER (WHERE is_correct = false AND selected_option_id IS NOT NULL)::int AS wrong_count,
+           COUNT(*) FILTER (WHERE selected_option_id IS NOT NULL)::int AS answered_count,
+           COALESCE(SUM(CASE WHEN awarded_marks > 0 THEN awarded_marks ELSE 0 END), 0)::numeric(7,2) AS positive_marks,
+           COALESCE(SUM(CASE WHEN awarded_marks < 0 THEN ABS(awarded_marks) ELSE 0 END), 0)::numeric(7,2) AS negative_marks
+         FROM submission_answers
+         WHERE submission_id = $1;`,
         [sub.id]
       );
       const { rows: totalQRows } = await client.query(
         'SELECT COUNT(*) AS total FROM questions WHERE exam_id = $1;',
         [sub.exam_id]
       );
+
+      const totalQ = parseInt(totalQRows[0]?.total || 0, 10);
+      const correctC = parseInt(ansRows[0]?.correct_count || 0, 10);
+      const wrongC = parseInt(ansRows[0]?.wrong_count || 0, 10);
+      const answeredC = parseInt(ansRows[0]?.answered_count || 0, 10);
+      const unansweredC = Math.max(0, totalQ - answeredC);
 
       return sendSuccess(res, {
         message: 'Submission already finalized.',
@@ -423,8 +467,13 @@ export async function submitExamHandler(req, res) {
           totalScore: sub.total_score,
           percentage: sub.percentage,
           passed: sub.passed,
-          answeredCount: parseInt(ansRows[0].answered_count, 10),
-          totalQuestions: parseInt(totalQRows[0].total, 10),
+          answeredCount: answeredC,
+          totalQuestions: totalQ,
+          correctCount: correctC,
+          wrongCount: wrongC,
+          unansweredCount: unansweredC,
+          positiveMarksEarned: parseFloat(ansRows[0]?.positive_marks || 0).toFixed(2),
+          negativeMarksDeducted: parseFloat(ansRows[0]?.negative_marks || 0).toFixed(2),
           submittedAt: sub.submitted_at
         }
       });
@@ -436,18 +485,6 @@ export async function submitExamHandler(req, res) {
     const scores = await scoreAndFinalise(client, sub, finalStatus);
     await client.query('COMMIT');
 
-    // Count for response (after commit)
-    const { rows: ansRows } = await client.query(
-      `SELECT COUNT(*) AS answered_count
-         FROM submission_answers
-        WHERE submission_id = $1 AND selected_option_id IS NOT NULL;`,
-      [sub.id]
-    );
-    const { rows: totalQRows } = await client.query(
-      'SELECT COUNT(*) AS total FROM questions WHERE exam_id = $1;',
-      [sub.exam_id]
-    );
-
     return sendSuccess(res, {
       message: 'Examination submitted successfully.',
       data: {
@@ -456,10 +493,14 @@ export async function submitExamHandler(req, res) {
         totalScore: scores.totalScore,
         percentage: scores.percentage,
         passed: scores.passed,
-        answeredCount: parseInt(ansRows[0]?.answered_count ?? 0, 10),
-        totalQuestions: parseInt(totalQRows[0]?.total ?? 0, 10),
+        answeredCount: scores.correctCount + scores.wrongCount,
+        totalQuestions: scores.totalQuestions,
+        correctCount: scores.correctCount,
+        wrongCount: scores.wrongCount,
+        unansweredCount: scores.unansweredCount,
+        positiveMarksEarned: scores.positiveMarksEarned,
+        negativeMarksDeducted: scores.negativeMarksDeducted,
         submittedAt: new Date().toISOString()
-        // NOTE: correct answers are NOT included — no post-exam review enabled yet
       }
     });
   } catch (err) {
