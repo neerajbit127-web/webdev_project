@@ -10,7 +10,7 @@ An online examination portal built with vanilla HTML/CSS/JavaScript, Node.js, Ex
 - `server/scripts/` — migration and account-provisioning commands.
 - `server/tests/` — Node.js test suite.
 
-The root `src/` and legacy root-level HTML/JS files are older copies. The active server serves `client/`; make frontend changes there.
+The Express server serves the `client/` directory. Make frontend changes in `client/index.html`, `client/app.js`, and `client/styles.css`; backend changes belong under `server/src/`.
 
 ## Requirements
 
